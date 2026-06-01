@@ -184,10 +184,12 @@ void configTIMER0(void)
 
 
 void configTIMER1(void){
+	TIM_ResetCounter(LPC_TIM1);
+	
 	TIM_TIMERCFG_Type timerCfg;
 	timerCfg.PrescaleOption = TIM_PRESCALE_USVAL;
 	timerCfg.PrescaleValue = 1;		//1us
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timerCfg);
+	TIM_InitTimer(LPC_TIM1, &timerCfg);
 	
 	TIM_CAPTURECFG_Type capCfg;
 	capCfg.CaptureChannel = 0;                 // J1 -> Canal 0 (CAP1.0)
@@ -195,10 +197,12 @@ void configTIMER1(void){
 	capCfg.FallingEdge    = DISABLE;          
 	capCfg.IntOnCaption   = ENABLE;          // Interrumpir al capturar para guardar el dato
 	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-
+	TIM_PinConfig(TIM_CAP1_0_P1_18);
+	
 	capCfg.CaptureChannel = 1;                 // J2 -> Canal 1 (CAP1.1)
 	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-
+	TIM_PinConfig(TIM_CAP1_1_P1_19);
+	
 	NVIC_EnableIRQ(TIMER1_IRQn);	//habilitacion de interrupciones por timer1
 }
 
@@ -207,12 +211,19 @@ void actualizarestado(){
 		case E_IDLE:
 			/* * El microcontrolador entra en estado de espera.
 			 * Acciones:
-			 * - Desactivar periféricos que no se usan (Capture, DAC, DMA).
-			 * - Mostrar mensaje de espera en LCD 16x2.
-			 * - Transición: Si se recibe el comando START_GAME por UART,
-			 * cambiar a E_CONFIG.
 			 */
-
+			
+			//Desactivar periféricos que no se usan (timers, DMA).
+			TIM_Disable(LPC_TIM1);	//desactiva timer1
+			TIM_ResetCounter(LPC_TIM1);
+			TIM_Disable(LPC_TIM0);	//desactiva timer0
+			TIM_ResetCounter(LPC_TIM0);
+			GPDMA_ChannelStop(GPDMA_CH_0);	//desactiva DMA
+			
+			//Mostrar mensaje de espera en LCD 16x2
+			mensajeLCD();	//FALTA IMPLEMENTAR FUNCION EN LIBRERIA
+			
+			//Si se recibe el comando START_GAME por UART, cambiar a E_CONFIG.
 			if (flag_start_game) {
 				flag_start_game = 0;
 				estado_actual = E_CONFIG;
@@ -222,29 +233,35 @@ void actualizarestado(){
 		case E_CONFIG:
 			/* * La aplicación Java configura la partida mediante UART.
 			 * Acciones:
-			 * - Reiniciar puntajes al comenzar una nueva partida completa.
-			 * - Procesar la configuración recibida (configurar teclas, seleccionar tono).
-			 * - Transición: Automática a E_COUNTDOWN una vez procesada la configuración.
 			 */
-
+			
+			//Reiniciar puntajes y estadísticas al comenzar una nueva partida completa.
 			victorias_j1 = 0;
 			victorias_j2 = 0;
+			tiempo_reaccion_jugador = 0;
+			jugador_ganador = 0;
+			tecla_objetivo = 0;
+			resultado_ronda = 0;
 
-			// Falta código de procesamiento de configuración
-
+			// FALTA Procesar la configuración recibida (configurar teclas, seleccionar tono)
+			
+			//Transición automática a E_COUNTDOWN una vez procesada la configuración.
 			estado_actual = E_COUNTDOWN;
 			break;
 
 		case E_COUNTDOWN:
 			/* * Se inicia la cuenta regresiva auditiva mediante DAC.
 			 * Acciones:
-			 * - Configurar y habilitar DMA para transferir samples al DAC.
-			 * - Los sonidos se generan sincronizados por un Timer Match.
 			 * - Transición: Automática a E_WAIT_GO. La finalización de los tonos se
 			 * manejará mediante interrupciones (DMA IRQ / Timer IRQ).
 			 */
 
-			// Falta habilitar DMA y Timer para audio...
+			//Habilitar Timer0 y DMA para transferir samples al DAC.
+			
+			//Los sonidos se generan sincronizados por un Timer Match.
+			
+			//Transición automática a E_WAIT_GO. 
+			//La finalización de los tonos se manejará mediante interrupciones (DMA IRQ / Timer IRQ).
 			estado_actual = E_WAIT_GO;
 			break;
 
