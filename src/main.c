@@ -22,11 +22,12 @@ typedef enum{
 } estado_juego_t;
 volatile estado_juego_t estado_actual = E_IDLE;
 
-volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibe comando de empezar juego
+volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibió comando de empezar juego
 volatile uint8_t flag_dma_audio_done = 0;		//
-volatile uint8_t flag_capture_event = 0;		//
+volatile uint8_t flag_capture_event = 0;		//  
 volatile uint32_t tiempo_reaccion_jugador = 0;	//	tiempo de reacción que se envía en caso de ganador de ronda
 volatile uint8_t jugador_ganador = 0;
+volatile uint32_t msTicks = 0;                  //Contador de milisegundos
 
 volatile uint8_t tecla_objetivo = 0; // misma tecla para J1 y J2
 
@@ -46,10 +47,11 @@ void configUART0(void);		//inicializa comunicación UART
 void configI2C0(void);		//inicializa comunicación I2C
 void configDAC(void);		//inicializa DAC
 void configDMA(void);		//inicializa DMA
-void configTIMER0(void);	//inicializa Timer0 para
-
+void configTIMER0(void);	//inicializa Timer0 
+void configTIMER1(void);    //inicializa Timer1
 
 void actualizarestado();
+
 
 
 int main(void) {
@@ -136,7 +138,7 @@ void configDAC(void)
 }
 void configDMA(void)
 {
-	//completar para mem a periferico para DAC
+	//completar mem a periferico para DAC
 
     GPDMA_Init();
 }
@@ -165,7 +167,11 @@ void configTIMER0(void)
 
     TIM_Cmd(LPC_TIM0, ENABLE);
 }
-volatile uint32_t msTicks = 0;
+
+void configTIMER1(void){
+    //inicializar timer1 habilitando capture
+}
+
 
 void actualizarestado(){
 	switch(estado_actual){
@@ -275,6 +281,8 @@ void actualizarestado(){
 				// Nueva ronda
 				estado_actual = E_COUNTDOWN;
 			}
+
+            //Enviar datos de ronda por UART
 			break;
 
 		case E_GAME_OVER:
@@ -290,10 +298,11 @@ void actualizarestado(){
 				// Display_ShowWinner(2);
 			}
 
-			// Audio_Play(buffer_game_over, size); // Sonido épico de fin de juego
+			// Audio_Play(buffer_game_over, size); // Sonido de fin de juego
 
-			// Al terminar de mostrar el ganador, volvemos a IDLE para esperar un nuevo START_GAME
+			// Al terminar de mostrar el ganador,se vuelve a IDLE para esperar un nuevo START_GAME
 			estado_actual = E_IDLE;
+
 			break;
 	}
 }
@@ -306,10 +315,6 @@ void TIMER0_IRQHandler(void)
     msTicks++;
 }
 
-/*
- * Capture IRQ: Almacenamiento automático de timestamps de reacción.
- * Asumiendo que usas el TIMER1 para el Input Capture de los jugadores.
- */
 void TIMER1_IRQHandler(void) {
     uint8_t tecla_presionada = 0;
 
@@ -362,17 +367,17 @@ void TIMER1_IRQHandler(void) {
     }
 }
 
-// Interrupción UART (Esqueleto necesario para tu E_IDLE y E_CONFIG)
+// Interrupción UART (Esqueleto necesario para E_IDLE y E_CONFIG)
 
 void UART0_IRQHandler(void) {
-    // Recepción de comandos desde PC[cite: 98].
+    // Recepción de comandos desde PC.
     // Leer el comando y activar flags como flag_start_game.
 }
 
-// Interrupción DMA (Esqueleto necesario para tu E_COUNTDOWN)
+// Interrupción DMA (Esqueleto necesario para E_COUNTDOWN)
 
 void DMA_IRQHandler(void) {
-    // Control de finalización de reproducción de audio[cite: 96].
+    // Control de finalización de reproducción de audio.
     // Limpiar flag de interrupción del DMA y avisar a la FSM.
     flag_dma_audio_done = 1;
 }
