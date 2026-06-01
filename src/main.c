@@ -22,12 +22,14 @@ typedef enum{
 } estado_juego_t;
 volatile estado_juego_t estado_actual = E_IDLE;
 
-volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibió comando de empezar juego
+volatile uint32_t msTicks = 0;
+uint32_t sonido_countdown[100];
+
+volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibe comando de empezar juego
 volatile uint8_t flag_dma_audio_done = 0;		//
-volatile uint8_t flag_capture_event = 0;		//  
+volatile uint8_t flag_capture_event = 0;		//
 volatile uint32_t tiempo_reaccion_jugador = 0;	//	tiempo de reacción que se envía en caso de ganador de ronda
 volatile uint8_t jugador_ganador = 0;
-volatile uint32_t msTicks = 0;                  //Contador de milisegundos
 
 volatile uint8_t tecla_objetivo = 0; // misma tecla para J1 y J2
 
@@ -43,19 +45,20 @@ volatile uint8_t victorias_j2 = 0;
 
 //---FUNCIONES-------------------------------------------------------------------------
 void configGPIO(void);		//pines
-void configUART0(void);		//inicializa comunicación UART
+void configUART1(void);		//inicializa comunicación UART por canal 1
 void configI2C0(void);		//inicializa comunicación I2C
 void configDAC(void);		//inicializa DAC
 void configDMA(void);		//inicializa DMA
-void configTIMER0(void);	//inicializa Timer0 
-void configTIMER1(void);    //inicializa Timer1
-
-void actualizarestado();    //actualizar máquina de estados
-
+void configTIMER0(void);	//inicializa Timer0 para
+void configTIMER1(void);	//inicializa Timer1 para capture
+void actualizarestado(); //función actualizar máquina de estados
 
 
 int main(void) {
-	//configuración de periféricos
+	configGPIO();
+	configUART1();
+	configI2C0();
+	configDAC();
 
 	while(1){
 		actualizarestado();
@@ -70,19 +73,27 @@ void configGPIO(void)   //revisar que inicialice correctamente todos los pines a
 	PINSEL_CFG_T pinCfg = {PORT_0, 0, PINSEL_FUNC_00, PINSEL_PULLUP, DISABLE};
 
     //Puerto 0[7:0] para lectura teclado J1
-	PINSEL_ConfigMultiplePins(&pinCfg, 0xFF);
-	GPIO_SetDir(PORT_0, 0xFF, GPIO_INPUT);
+	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
+	pinCfg.mode = PINSEL_TRISTATE;
+	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
+	GPIO_SetDir(PORT_0, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
+	GPIO_SetDir(PORT_0, 0xF0, GPIO_INPUT); // [7:4] ->entradas
 	GPIO_ClearPins(PORT_0, 0xFF);
-	    
+	GPIO_SetMask(PORT_0, 0XFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
+	
     //Puerto 2[7:0] para lectura teclado J2
 	pinCfg.port = PORT_2;
-	PINSEL_ConfigMultiplePins(&pinCfg, 0xFF);
-    GPIO_SetDir(PORT_2, 0xFF, GPIO_INPUT);
+	pinCfg.mode = PINSEL_PULLUP;
+	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
+	pinCfg.mode = PINSEL_TRISTATE;
+	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
+	GPIO_SetDir(PORT_2, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
+	GPIO_SetDir(PORT_2, 0xF0, GPIO_INPUT); // [7:4] ->entradas
     GPIO_ClearPins(PORT_2, 0xFF);
-    
+    GPIO_SetMask(PORT_2, 0XFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
 }
 
-void configUART0(void)
+void configUART1(void)
 {
     PINSEL_CFG_T pinCfg = {PORT_0, PIN_15, PINSEL_FUNC_01, PINSEL_PULLUP, DISABLE};
     PINSEL_ConfigPin(&pinCfg);	//config TXD1
@@ -93,73 +104,76 @@ void configUART0(void)
     UART_Init(UART1, &uartCfg);	//Config inicial UART1 p transmitir a 115200 baudios en cfg 8N1
 
     UART_FIFO_CFG_T fifoCfg = {ENABLE , ENABLE , DISABLE , UART_FIFO_TRGLEV0};
-    UART_FIFOConfig(UART1, &fifoCfg);   //resetea Tx y Rx al iniciar, no usa DMA y activa con 1 caracter en FIFO
+    UART_FIFOConfig(UART1, &fifoCfg);	//cfg inicial de FIFO
     
     UART_TxEnable(UART1);
 }
 
-void configI2C0(void)       //revisar
+void configI2C0(void)
 {
-    PINSEL_CFG_Type pinCfg;
+	PINSEL_CFG_T pinCfg = {PORT_0, PIN_27, PINSEL_FUNC_01, PINSEL_PULLUP, ENABLE};
+    PINSEL_ConfigPin(&pinCfg);	//cfg de SDA0
 
-    pinCfg.Portnum   = PINSEL_PORT_0;
-    pinCfg.Funcnum   = PINSEL_FUNC_1;
-    pinCfg.Pinmode   = PINSEL_PINMODE_TRISTATE;
-    pinCfg.OpenDrain = PINSEL_PINMODE_OPENDRAIN;
+    pinCfg.pin = PIN_28;
+    PINSEL_ConfigPin(&pinCfg);	//cfg de SCL0
 
-    pinCfg.Pinnum = PINSEL_PIN_27;
-    PINSEL_ConfigPin(&pinCfg);
-
-    pinCfg.Pinnum = PINSEL_PIN_28;
-    PINSEL_ConfigPin(&pinCfg);
-
-    I2C_Init(LPC_I2C0, 100000);
-
-    I2C_Cmd(LPC_I2C0, ENABLE);
+    I2C_Init(LPC_I2C0, 100000);	//inicializa en 100KHz
+    
+    I2C_Cmd(LPC_I2C0, ENABLE);	//habilita interfaz
 }
 
-void configDAC(void)    //revisar
+void configDAC(void)
 {
-    PINSEL_CFG_Type pinCfg;
-
-    pinCfg.Portnum   = PINSEL_PORT_0;
-    pinCfg.Pinnum    = PINSEL_PIN_26;
-    pinCfg.Funcnum   = PINSEL_FUNC_2;
-    pinCfg.Pinmode   = PINSEL_PINMODE_TRISTATE;
-    pinCfg.OpenDrain = PINSEL_PINMODE_NORMAL;
-
-    PINSEL_ConfigPin(&pinCfg);
-
-    DAC_Init(LPC_DAC);
-
-    DAC_UpdateValue(LPC_DAC, 0);
-
-    DAC_SetBias(LPC_DAC, DAC_MAX_CURRENT_700uA);
+    PINSEL_CFG_T pinCfg= {PORT_0, PIN_26, PINSEL_FUNC_10, PINSEL_TRISTATE, DISABLE};
+    PINSEL_ConfigPin(&pinCfg);	//conf de DAC output P0[26]
+    
+    DAC_Init();
+    DAC_SetBias(DAC_700uA);
+    
+    DAC_UpdateValue(0);
 }
+
+GPDMA_Channel_CFG_T dmaCfg={0}; //estructura global para poder recargar en cada "bip" del juego
 void configDMA(void)
 {
-	//completar mem a periferico para DAC
-
-    GPDMA_Init();
+	GPDMA_Init();
+	
+	dmaCfg.channelNum = GPDMA_CH_0;            // canal 0
+	dmaCfg.transferSize = 100;        		   // cantidad de datos: 100
+	dmaCfg.type = GPDMA_M2P;                   // mem a periférico
+	dmaCfg.srcMemAddr = (uint32_t)sonido_countdown;   // dir del arreglo en RAM
+	dmaCfg.dstMemAddr = (uint32_t)&(LPC_DAC->DACR);            
+	dmaCfg.dstConn = GPDMA_MAT0_0;                             
+	// configuracion origen
+	dmaCfg.src.width = GPDMA_WORD;        // 32 bits
+	dmaCfg.src.burst = GPDMA_BSIZE_1;     // 1 elemento
+	dmaCfg.src.increment = ENABLE;        // habilitacion p/recorrer el arreglo
+	// configuracion destino
+	dmaCfg.dst.width = GPDMA_WORD;        // 32 bits
+	dmaCfg.dst.burst = GPDMA_BSIZE_1;     
+	dmaCfg.dst.increment = DISABLE;       // destino fijo
+	dmaCfg.intTC = ENABLE;                                     
+	dmaCfg.intErr = ENABLE;                                    
+	dmaCfg.linkedList = 0;                // 0 para que se detenga al terminar las 100 muestras
+	GPDMA_SetupChannel(&dmaCfg);
+	
 }
 
-void configTIMER0(void) //revisar
+void configTIMER0(void)
 {
     TIM_TIMERCFG_T timerCfg;
-
     timerCfg.prescaleOpt = TIM_PRESCALE_USVAL;
     timerCfg.prescaleValue = 1000;
 
     TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timerCfg);
 
     TIM_MATCHCFG_T matchCfg;
-
-    matchCfg.MatchChannel = 0;
-    matchCfg.IntOnMatch   = ENABLE;
-    matchCfg.ResetOnMatch = ENABLE;
-    matchCfg.StopOnMatch  = DISABLE;
-    matchCfg.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
-    matchCfg.MatchValue   = 1;
+    matchCfg.channel = 0;
+    matchCfg.intEn  = DISABLE;
+    matchCfg.resetEn = ENABLE;
+    matchCfg.stopEn  = DISABLE;
+    matchCfg.extOpt = TIM_NOTHING;
+    matchCfg.matchValue   = 1;
 
     TIM_ConfigMatch(LPC_TIM0, &matchCfg);
 
@@ -168,10 +182,25 @@ void configTIMER0(void) //revisar
     TIM_Cmd(LPC_TIM0, ENABLE);
 }
 
-void configTIMER1(void){
-    //inicializar timer1 habilitando capture
-}
 
+void configTIMER1(void){
+	TIM_TIMERCFG_Type timerCfg;
+	timerCfg.PrescaleOption = TIM_PRESCALE_USVAL;
+	timerCfg.PrescaleValue = 1;		//1us
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timerCfg);
+	
+	TIM_CAPTURECFG_Type capCfg;
+	capCfg.CaptureChannel = 0;                 // J1 -> Canal 0 (CAP1.0)
+	capCfg.RisingEdge     = ENABLE;		 	 // Flanco de subida 
+	capCfg.FallingEdge    = DISABLE;          
+	capCfg.IntOnCaption   = ENABLE;          // Interrumpir al capturar para guardar el dato
+	TIM_ConfigCapture(LPC_TIM1, &capCfg);
+
+	capCfg.CaptureChannel = 1;                 // J2 -> Canal 1 (CAP1.1)
+	TIM_ConfigCapture(LPC_TIM1, &capCfg);
+
+	NVIC_EnableIRQ(TIMER1_IRQn);	//habilitacion de interrupciones por timer1
+}
 
 void actualizarestado(){
 	switch(estado_actual){
@@ -281,8 +310,6 @@ void actualizarestado(){
 				// Nueva ronda
 				estado_actual = E_COUNTDOWN;
 			}
-
-            //Enviar datos de ronda por UART
 			break;
 
 		case E_GAME_OVER:
@@ -298,11 +325,10 @@ void actualizarestado(){
 				// Display_ShowWinner(2);
 			}
 
-			// Audio_Play(buffer_game_over, size); // Sonido de fin de juego
+			// Audio_Play(buffer_game_over, size); // Sonido épico de fin de juego
 
-			// Al terminar de mostrar el ganador,se vuelve a IDLE para esperar un nuevo START_GAME
+			// Al terminar de mostrar el ganador, volvemos a IDLE para esperar un nuevo START_GAME
 			estado_actual = E_IDLE;
-
 			break;
 	}
 }
@@ -315,6 +341,10 @@ void TIMER0_IRQHandler(void)
     msTicks++;
 }
 
+/*
+ * Capture IRQ: Almacenamiento automático de timestamps de reacción.
+ * Asumiendo que usas el TIMER1 para el Input Capture de los jugadores.
+ */
 void TIMER1_IRQHandler(void) {
     uint8_t tecla_presionada = 0;
 
@@ -367,17 +397,17 @@ void TIMER1_IRQHandler(void) {
     }
 }
 
-// Interrupción UART (Esqueleto necesario para E_IDLE y E_CONFIG)
+// Interrupción UART (Esqueleto necesario para tu E_IDLE y E_CONFIG)
 
 void UART0_IRQHandler(void) {
-    // Recepción de comandos desde PC.
+    // Recepción de comandos desde PC[cite: 98].
     // Leer el comando y activar flags como flag_start_game.
 }
 
-// Interrupción DMA (Esqueleto necesario para E_COUNTDOWN)
+// Interrupción DMA (Esqueleto necesario para tu E_COUNTDOWN)
 
 void DMA_IRQHandler(void) {
-    // Control de finalización de reproducción de audio.
+    // Control de finalización de reproducción de audio[cite: 96].
     // Limpiar flag de interrupción del DMA y avisar a la FSM.
     flag_dma_audio_done = 1;
 }
