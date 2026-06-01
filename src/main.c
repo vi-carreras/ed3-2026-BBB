@@ -9,6 +9,7 @@
 #include "lpc17xx_timer.h"
 #include "lpc17xx_gpdma.h"
 #include "lpc17xx_nvic.h"
+#include "general.h"
 
 //---VARIABLES-------------------------------------------------------------------------
 typedef enum{
@@ -49,7 +50,7 @@ void configUART1(void);		//inicializa comunicación UART por canal 1
 void configI2C0(void);		//inicializa comunicación I2C
 void configDAC(void);		//inicializa DAC
 void configDMA(void);		//inicializa DMA
-void configTIMER0(void);	//inicializa Timer0 para
+void configTIMER0(void);	//inicializa Timer0 para scheduler del DAC
 void configTIMER1(void);	//inicializa Timer1 para capture
 void actualizarestado(); //función actualizar máquina de estados
 
@@ -70,22 +71,22 @@ int main(void) {
 //---FUNCIONES-------------------------------------------------------------------------
 void configGPIO(void)   //revisar que inicialice correctamente todos los pines a usar
 {
-	PINSEL_CFG_T pinCfg = {PORT_0, 0, PINSEL_FUNC_00, PINSEL_PULLUP, DISABLE};
+	PINSEL_CFG_T pinCfg = {PORT_0, 0, PINSEL_FUNC_00, PINSEL_TRISTATE, DISABLE};
 
     //Puerto 0[7:0] para lectura teclado J1
 	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
-	pinCfg.mode = PINSEL_TRISTATE;
+	pinCfg.mode = PINSEL_PULLUP;
 	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
 	GPIO_SetDir(PORT_0, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
 	GPIO_SetDir(PORT_0, 0xF0, GPIO_INPUT); // [7:4] ->entradas
 	GPIO_ClearPins(PORT_0, 0xFF);
 	GPIO_SetMask(PORT_0, 0XFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
-	
+
     //Puerto 2[7:0] para lectura teclado J2
 	pinCfg.port = PORT_2;
-	pinCfg.mode = PINSEL_PULLUP;
-	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
 	pinCfg.mode = PINSEL_TRISTATE;
+	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
+	pinCfg.mode = PINSEL_PULLUP;
 	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
 	GPIO_SetDir(PORT_2, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
 	GPIO_SetDir(PORT_2, 0xF0, GPIO_INPUT); // [7:4] ->entradas
@@ -207,8 +208,11 @@ void configTIMER1(void){
 }
 
 void actualizarestado(){
+    char buffer_lcd_l1[16];	//1ra línea de pantalla LCD
+	char buffer_lcd_l2[16];	//2da línea
+	
 	switch(estado_actual){
-		case E_IDLE:
+		case E_IDLE:        
 			/* * El microcontrolador entra en estado de espera.
 			 * Acciones:
 			 */
@@ -230,7 +234,7 @@ void actualizarestado(){
 			}
 			break;
 
-		case E_CONFIG:
+		case E_CONFIG:  //INCOMPLETO
 			/* * La aplicación Java configura la partida mediante UART.
 			 * Acciones:
 			 */
@@ -249,7 +253,7 @@ void actualizarestado(){
 			estado_actual = E_COUNTDOWN;
 			break;
 
-		case E_COUNTDOWN:
+		case E_COUNTDOWN:   //INCOMPLETO
 			/* * Se inicia la cuenta regresiva auditiva mediante DAC.
 			 * Acciones:
 			 * - Transición: Automática a E_WAIT_GO. La finalización de los tonos se
@@ -265,7 +269,7 @@ void actualizarestado(){
 			estado_actual = E_WAIT_GO;
 			break;
 
-		case E_WAIT_GO:
+		case E_WAIT_GO:     //INCOMPLETO
 			if (flag_dma_audio_done) {
 				// Mostrar tecla en LCD...
 
@@ -283,7 +287,7 @@ void actualizarestado(){
 			}
 			break;
 
-		case E_WAIT_INPUT:
+		case E_WAIT_INPUT:  //INCOMPLETO
 			// Opción 1: Alguien presionó una tecla (IRQ activó el flag)
 			if (flag_capture_event) {
 				estado_actual = E_ROUND_END;
@@ -299,7 +303,7 @@ void actualizarestado(){
 			}
 			break;
 
-		case E_ROUND_END:
+		case E_ROUND_END:   //INCOMPLETO
 			/* Procesar el resultado de la ronda */
 			switch(resultado_ronda) {
 				case 0: // Timeout
@@ -329,7 +333,7 @@ void actualizarestado(){
 			}
 			break;
 
-		case E_GAME_OVER:
+		case E_GAME_OVER:   //INCOMPLETO
 			/* * Acciones:
 			 * - Anunciar al ganador definitivo en el LCD.
 			 * - Enviar comando a Java indicando el fin de la partida.
@@ -351,17 +355,6 @@ void actualizarestado(){
 }
 
 // --- MANEJO DE INTERRUPCIONES (NVIC) ---
-void TIMER0_IRQHandler(void)
-{
-    TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
-
-    msTicks++;
-}
-
-/*
- * Capture IRQ: Almacenamiento automático de timestamps de reacción.
- * Asumiendo que usas el TIMER1 para el Input Capture de los jugadores.
- */
 void TIMER1_IRQHandler(void) {
     uint8_t tecla_presionada = 0;
 
@@ -414,17 +407,13 @@ void TIMER1_IRQHandler(void) {
     }
 }
 
-// Interrupción UART (Esqueleto necesario para tu E_IDLE y E_CONFIG)
-
 void UART0_IRQHandler(void) {
-    // Recepción de comandos desde PC[cite: 98].
+    // Recepción de comandos desde PC. -> ver funcionamiento de comunicación hacia la placa
     // Leer el comando y activar flags como flag_start_game.
 }
 
-// Interrupción DMA (Esqueleto necesario para tu E_COUNTDOWN)
-
 void DMA_IRQHandler(void) {
-    // Control de finalización de reproducción de audio[cite: 96].
+    // Control de finalización de reproducción de audio.
     // Limpiar flag de interrupción del DMA y avisar a la FSM.
     flag_dma_audio_done = 1;
 }
