@@ -50,7 +50,7 @@ void configDMA(void);		//inicializa DMA
 void configTIMER0(void);	//inicializa Timer0 
 void configTIMER1(void);    //inicializa Timer1
 
-void actualizarestado();
+void actualizarestado();    //actualizar máquina de estados
 
 
 
@@ -58,47 +58,47 @@ int main(void) {
 	//configuración de periféricos
 
 	while(1){
-		actualizarestado();//función actualizar máquina de estados
+		actualizarestado();
 	}
 
     return 0 ;
 }
 
 //---FUNCIONES-------------------------------------------------------------------------
-void configGPIO(void)
+void configGPIO(void)   //revisar que inicialice correctamente todos los pines a usar
 {
-    GPIO_SetDir(PORT_1, BIT(0), OUTPUT);
-    GPIO_ClearValue(PORT_1, BIT(0));
+	PINSEL_CFG_T pinCfg = {PORT_0, 0, PINSEL_FUNC_00, PINSEL_PULLUP, DISABLE};
 
-    GPIO_SetDir(PORT_2, BIT(10), INPUT);
+    //Puerto 0[7:0] para lectura teclado J1
+	PINSEL_ConfigMultiplePins(&pinCfg, 0xFF);
+	GPIO_SetDir(PORT_0, 0xFF, GPIO_INPUT);
+	GPIO_ClearPins(PORT_0, 0xFF);
+	    
+    //Puerto 2[7:0] para lectura teclado J2
+	pinCfg.port = PORT_2;
+	PINSEL_ConfigMultiplePins(&pinCfg, 0xFF);
+    GPIO_SetDir(PORT_2, 0xFF, GPIO_INPUT);
+    GPIO_ClearPins(PORT_2, 0xFF);
+    
 }
 
 void configUART0(void)
 {
-    PINSEL_CFG_Type pinCfg;
+    PINSEL_CFG_T pinCfg = {PORT_0, PIN_15, PINSEL_FUNC_01, PINSEL_PULLUP, DISABLE};
+    PINSEL_ConfigPin(&pinCfg);	//config TXD1
+    pinCfg.Pinnum = PIN_16;
+    PINSEL_ConfigPin(&pinCfg);	//config RXD1
 
-    pinCfg.Portnum   = PINSEL_PORT_0;
-    pinCfg.Pinnum    = PINSEL_PIN_2;
-    pinCfg.Funcnum   = PINSEL_FUNC_1;
-    pinCfg.Pinmode   = PINSEL_PINMODE_PULLUP;
-    pinCfg.OpenDrain = PINSEL_PINMODE_NORMAL;
+    UART_CFG_T uartCfg = {115200 , UART_PARITY_NONE , UART_DBITS_8 , UART_STOPBIT_1};
+    UART_Init(UART1, &uartCfg);	//Config inicial UART1 p transmitir a 115200 baudios en cfg 8N1
 
-    PINSEL_ConfigPin(&pinCfg);
-
-    pinCfg.Pinnum = PINSEL_PIN_3;
-    PINSEL_ConfigPin(&pinCfg);
-
-    UART_CFG_Type uartCfg;
-
-    UART_ConfigStructInit(&uartCfg);
-
-    uartCfg.Baud_rate = 115200;
-
-    UART_Init(LPC_UART0, &uartCfg);
-
-    UART_TxCmd(LPC_UART0, ENABLE);
+    UART_FIFO_CFG_T fifoCfg = {ENABLE , ENABLE , DISABLE , UART_FIFO_TRGLEV0};
+    UART_FIFOConfig(UART1, &fifoCfg);   //resetea Tx y Rx al iniciar, no usa DMA y activa con 1 caracter en FIFO
+    
+    UART_TxEnable(UART1);
 }
-void configI2C0(void)
+
+void configI2C0(void)       //revisar
 {
     PINSEL_CFG_Type pinCfg;
 
@@ -118,7 +118,7 @@ void configI2C0(void)
     I2C_Cmd(LPC_I2C0, ENABLE);
 }
 
-void configDAC(void)
+void configDAC(void)    //revisar
 {
     PINSEL_CFG_Type pinCfg;
 
@@ -143,7 +143,7 @@ void configDMA(void)
     GPDMA_Init();
 }
 
-void configTIMER0(void)
+void configTIMER0(void) //revisar
 {
     TIM_TIMERCFG_T timerCfg;
 
