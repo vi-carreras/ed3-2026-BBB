@@ -60,6 +60,9 @@ int main(void) {
 	configUART1();
 	configI2C0();
 	configDAC();
+	configDMA();
+	configTIMER0();
+	configTIMER1();
 
 	while(1){
 		actualizarestado();
@@ -355,6 +358,13 @@ void actualizarestado(){
 }
 
 // --- MANEJO DE INTERRUPCIONES (NVIC) ---
+void TIMER0_IRQHandler(void)
+{
+    TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
+
+    msTicks++;
+}
+
 void TIMER1_IRQHandler(void) {
     uint8_t tecla_presionada = 0;
 
