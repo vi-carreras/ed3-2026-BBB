@@ -475,7 +475,7 @@ void TIMER1_IRQHandler(void) {
         TIM_ClearIntPending(LPC_TIM1, TIM_CR0_INT);
 
         // Guardamos el tiempo exacto de reacción
-        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_COUNTER_INCAP0);
+        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_CAPTURE_0);
 
         // Leemos qué tecla presionó J1 en su teclado
         tecla_presionada = EscanearTecladoJ1();
@@ -499,7 +499,7 @@ void TIMER1_IRQHandler(void) {
         TIM_ClearIntPending(LPC_TIM1, TIM_CR1_INT);
 
         // Guardamos el tiempo exacto de reacción
-        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_COUNTER_INCAP1);
+        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_CAPTURE_1);
 
         // Leemos qué tecla presionó J2 en su teclado
         tecla_presionada = EscanearTecladoJ2();

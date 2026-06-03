@@ -5,8 +5,8 @@
 #include "LPC17xx.h"
 #include <math.h>
 
-#define DAC_MAX_VALUE	1023U
-#define DAC_BIAS		512U
+#define DAC_MAX_VALUE	1023
+#define DAC_BIAS		512
 
 static GPDMA_Channel_CFG_T dmacfg;
 
@@ -37,16 +37,6 @@ void Audio_Play(uint32_t* buffer, uint32_t size){
 	// TIM0, DAC y DMA engine ya fueron configurados por main.
 	// Acá solo se configura el canal DMA con el buffer actual y se arranca.
 
-	GPDMA_Endpoint_T src;
-	src.width = GPDMA_WORD;
-	src.burst = GPDMA_BSIZE_1;
-	src.increment = ENABLE;
-
-	GPDMA_Endpoint_T dst;
-	dst.width = GPDMA_WORD;
-	dst.burst = GPDMA_BSIZE_1;
-	dst.increment = DISABLE;
-
 	dmacfg.channelNum = GPDMA_CH_0;
 	dmacfg.transferSize = size;
 	dmacfg.type = GPDMA_M2P;
@@ -54,8 +44,12 @@ void Audio_Play(uint32_t* buffer, uint32_t size){
 	dmacfg.dstMemAddr = (uint32_t)&(LPC_DAC->DACR);
 	dmacfg.srcConn = GPDMA_MAT0_0;
 	dmacfg.dstConn = GPDMA_DAC;
-	dmacfg.src = &src;
-	dmacfg.dst = &dst;
+	dmacfg.src.width = GPDMA_WORD;
+	dmacfg.src.burst = GPDMA_BSIZE_1;
+	dmacfg.src.increment = ENABLE;
+	dmacfg.dst.width = GPDMA_WORD;
+	dmacfg.dst.burst = GPDMA_BSIZE_1;
+	dmacfg.dst.increment = DISABLE;
 	dmacfg.intTC = ENABLE;
 	dmacfg.intErr = ENABLE;
 	dmacfg.linkedList = 0;
