@@ -1,85 +1,167 @@
-/*
- * general.c
- *
- *  Created on: 1 jun. 2026
- *      Author: Usuario
- */
 #include "general.h"
+#include "lpc17xx_uart.h"
+#include "lpc17xx_i2c.h"
+#include "lpc_types.h"
 #include <stddef.h>
 
-void retardo(){//retardo del teclado
-	uint32_t i;  //for(i=0;i<55000;i++){};//se purde ir reajustado conforme a la necesidad llegamos a ese valor porque se estabiliza el teclado
-	for(i=0;i<80000;i++){};
+// --- LCD 16x2 por I2C (PCF8574) ---
+#define LCD_I2C_ADDR		0x27
+#define LCD_BACKLIGHT		0x08
+#define LCD_EN				0x04
+#define LCD_RW				0x02
+#define LCD_RS				0x01
+
+static void lcd_send_nibble(uint8_t data){
+	I2C_M_SETUP_Type cfg;
+	cfg.sl_addr7bit = LCD_I2C_ADDR;
+	cfg.tx_data = &data;
+	cfg.tx_length = 1;
+	cfg.tx_count = 0;
+	cfg.rx_data = NULL;
+	cfg.rx_length = 0;
+	cfg.rx_count = 0;
+	cfg.retransmissions_max = 3;
+	cfg.retransmissions_count = 0;
+	cfg.status = 0;
+	cfg.callback = NULL;
+
+	I2C_MasterTransferData(LPC_I2C0, &cfg, I2C_TRANSFER_POLLING);
+	retardo_ms(2);
+}
+
+static void lcd_write(uint8_t data, uint8_t mode){
+	uint8_t high = (data & 0xF0) | LCD_BACKLIGHT | mode | LCD_EN;
+	uint8_t low  = ((data << 4) & 0xF0) | LCD_BACKLIGHT | mode;
+
+	lcd_send_nibble(high);
+	lcd_send_nibble(high & ~LCD_EN);	// pulso E baja
+	lcd_send_nibble(low);
+	lcd_send_nibble(low & ~LCD_EN);
+}
+
+static void lcd_cmd(uint8_t cmd){
+	lcd_write(cmd, 0);
+}
+
+static void lcd_data(uint8_t data){
+	lcd_write(data, LCD_RS);
+}
+
+static void lcd_init(void){
+	// Inicialización en 4-bit mode (secuencia estándar HD44780)
+	lcd_send_nibble(0x30 | LCD_BACKLIGHT | LCD_EN);
+	lcd_send_nibble(0x30 | LCD_BACKLIGHT);
+	lcd_send_nibble(0x30 | LCD_BACKLIGHT | LCD_EN);
+	lcd_send_nibble(0x30 | LCD_BACKLIGHT);
+	lcd_send_nibble(0x20 | LCD_BACKLIGHT | LCD_EN);	// 4-bit mode
+	lcd_send_nibble(0x20 | LCD_BACKLIGHT);
+
+	lcd_cmd(0x28);	// 2 líneas, 5x8
+	lcd_cmd(0x0C);	// display on, cursor off
+	lcd_cmd(0x01);	// clear display
+	lcd_cmd(0x06);	// entry mode: increment, no shift
+}
+
+static uint8_t lcd_inicializado = 0;
+
+void mensajeLCD(char* linea1, char* linea2){
+	if(!lcd_inicializado){
+		lcd_init();
+		lcd_inicializado = 1;
+	}
+	lcd_cmd(0x80);	// cursor inicio línea 1 (DDRAM 0x00)
+	for(uint8_t i=0; i<16 && linea1[i]; i++){
+		lcd_data((uint8_t)linea1[i]);
+	}
+
+	lcd_cmd(0xC0);	// cursor inicio línea 2 (DDRAM 0x40)
+	for(uint8_t i=0; i<16 && linea2[i]; i++){
+		lcd_data((uint8_t)linea2[i]);
+	}
+}
+
+static const uint8_t keyboard[4][4] = {
+	{'1','2','3','A'},
+	{'4','5','6','B'},
+	{'7','8','9','C'},
+	{'*','0','#','D'}
+};
+
+static uint32_t fila;
+static int8_t columna;
+static uint8_t scan_data;
+static uint8_t dato_uart;
+
+static void enviar(uint8_t dato){
+	while(!(UART_GetStatus(UART1, UART_LSR_THRE)));
+	UART_SendByte(UART1, dato);
+}
+
+void retardo_ms(uint32_t ms){
+	uint32_t inicio = msTicks;
+	while((msTicks - inicio) < ms);
 }
 
 uint8_t EscanearTecladoJ1(void){
-	for(fila=0;fila<4;fila++){//recorre las cuatro filas que son las salidas enviando "0"
-		switch(fila){
-			case(0): LPC_GPIO0->FIOCLR|=1<<0; break;//envio un cero al P0.0
-			case(1): LPC_GPIO0->FIOCLR|=1<<1; break;//envio un cero al P0.1
-			case(2): LPC_GPIO0->FIOCLR|=1<<2; break;//envio un cero al P0.2
-			case(3): LPC_GPIO0->FIOCLR|=1<<3; break;//envio un cero al P0.3
-			}//llave del switch
-		retardo();
-		while(!(LPC_GPIO0->FIOPIN>>4 &(0XF)));
-		retardo();
-		scan_data = LPC_GPIO0->FIOPIN>>4 &(0XF);//desplazo 4 lugares a las entradas y verifica si se ha presionado alguna tecla envia un cero porque son entradas
-		columna = -1;//es un CONTROL para saber si se presiono una tecla
+	for(fila=0;fila<4;fila++){
+		// Pongo la fila actual a 0 (las demás quedan como estaban)
+		LPC_GPIO0->FIOCLR = (1<<fila);
+
+		retardo_ms(5);  // estabilización de teclado (~5ms)
+
+		scan_data = (LPC_GPIO0->FIOPIN >> 4) & 0x0F;
+
+		// Restauro la fila a 1 (input tristate)
+		LPC_GPIO0->FIOSET = (1<<fila);
+
+		columna = -1;
 		switch(scan_data){
-			case(0xE): columna =0;break;
-			case(0xD): columna =1;break;
-			case(0xB): columna =2;break;
-			case(0x7): columna =3;break;
-		}//llave del switch
+			case 0x0E: columna = 0; break;
+			case 0x0D: columna = 1; break;
+			case 0x0B: columna = 2; break;
+			case 0x07: columna = 3; break;
+			default:   columna = -1; break;
+		}
 
-		if(columna!=-1){//este algoritmo con break hace que salga del bucle for si es que presiona una tecla
+		if(columna != -1){
 			break;
-			}
-	}//==== Llave del for  fila i============================================
-	//==============salida del ciclo for se evalua como sale columna = -1 o  !=-1======================================
+		}
+	}
 
-		if(columna ==-1){// Si no cambia columna =-1 es porque no se presiono ninguna tecla no retorna nada
-			return 0;
-		}
-		else{//si columna != -1 entonces se ha presionado una tecla
-			dato_uart = keyboard[fila][columna];// dato_uart es un dato globa; listo para enviar a un uart
-			enviar(dato_uart);//funcion que envia por el uart la tecla que se presiono
-			return keyboard[fila][columna];//la funcion uint8_t ScanearTeclado() retorna un elememto del arreglo
-		}
+	if(columna == -1){
+		return 0;
+	}
+
+	return keyboard[fila][columna];
 }
 
 uint8_t EscanearTecladoJ2(void){
-	for(fila=0;fila<4;fila++){//recorre las cuatro filas que son las salidas enviando "0"
-		switch(fila){
-			case(0): LPC_GPIO2->FIOCLR|=1<<0; break;//envio un cero al P2.0
-			case(1): LPC_GPIO2->FIOCLR|=1<<1; break;//envio un cero al P2.1
-			case(2): LPC_GPIO2->FIOCLR|=1<<2; break;//envio un cero al P2.2
-			case(3): LPC_GPIO2->FIOCLR|=1<<3; break;//envio un cero al P2.3
-			}//llave del switch
-		retardo();
-		while(!(LPC_GPIO2->FIOPIN>>4 &(0XF)));
-		retardo();
-		scan_data = LPC_GPIO2->FIOPIN>>4 &(0XF);//desplazo 4 lugares a las entradas y verifica si se ha presionado alguna tecla envia un cero porque son entradas
-		columna = -1;//es un CONTROL para saber si se presiono una tecla
+	for(fila=0;fila<4;fila++){
+		LPC_GPIO2->FIOCLR = (1<<fila);
+
+		retardo_ms(5);
+
+		scan_data = (LPC_GPIO2->FIOPIN >> 4) & 0x0F;
+
+		LPC_GPIO2->FIOSET = (1<<fila);
+
+		columna = -1;
 		switch(scan_data){
-			case(0xE): columna =0;break;
-			case(0xD): columna =1;break;
-			case(0xB): columna =2;break;
-			case(0x7): columna =3;break;
-		}//llave del switch
+			case 0x0E: columna = 0; break;
+			case 0x0D: columna = 1; break;
+			case 0x0B: columna = 2; break;
+			case 0x07: columna = 3; break;
+			default:   columna = -1; break;
+		}
 
-		if(columna!=-1){//este algoritmo con break hace que salga del bucle for si es que presiona una tecla
+		if(columna != -1){
 			break;
-			}
-	}//==== Llave del for  fila i============================================
-	//==============salida del ciclo for se evalua como sale columna = -1 o  !=-1======================================
+		}
+	}
 
-		if(columna ==-1){// Si no cambia columna =-1 es porque no se presiono ninguna tecla no retorna nada
-			return 0;
-		}
-		else{//si columna != -1 entonces se ha presionado una tecla
-			dato_uart = keyboard[fila][columna];// dato_uart es un dato globa; listo para enviar a un uart
-			enviar(dato_uart);//funcion que envia por el uart la tecla que se presiono
-			return keyboard[fila][columna];//la funcion uint8_t ScanearTeclado() retorna un elememto del arreglo
-		}
+	if(columna == -1){
+		return 0;
+	}
+
+	return keyboard[fila][columna];
 }

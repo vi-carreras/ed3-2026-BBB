@@ -10,6 +10,15 @@
 #include "lpc17xx_gpdma.h"
 #include "lpc17xx_nvic.h"
 #include "general.h"
+#include "audio.h"
+#include "lpc17xx_systick.h"
+
+//---Variables de SysTick para msTicks (reloj del sistema)---
+volatile uint32_t msTicks = 0;
+
+void SysTick_Handler(void){
+	msTicks++;
+}
 
 //---VARIABLES-------------------------------------------------------------------------
 typedef enum{
@@ -23,7 +32,6 @@ typedef enum{
 } estado_juego_t;
 volatile estado_juego_t estado_actual = E_IDLE;
 
-volatile uint32_t msTicks = 0;
 uint32_t sonido_countdown[100];
 
 volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibe comando de empezar juego
@@ -41,6 +49,8 @@ volatile uint8_t resultado_ronda = 0;
 volatile uint8_t victorias_j1 = 0;
 volatile uint8_t victorias_j2 = 0;
 #define MAX_VICTORIAS 10
+
+volatile uint32_t tiempo_inicio_espera = 0;	//timestamp de inicio de espera para timeout
 
 #define TIMEOUT_MS 5000		//tiempo máximo de ingreso de respuesta
 
@@ -64,11 +74,15 @@ int main(void) {
 	configTIMER0();
 	configTIMER1();
 
+	// SysTick cada 1ms para msTicks (reemplaza TIM0 MR1 que no puede convivir con MR0)
+	SYSTICK_InternalInit(1);
+	SYSTICK_IntCmd(ENABLE);
+	SYSTICK_Cmd(ENABLE);
+
 	while(1){
 		actualizarestado();
 	}
-
-    return 0 ;
+	// return 0; — no se llega nunca
 }
 
 //---FUNCIONES-------------------------------------------------------------------------
@@ -215,7 +229,7 @@ void actualizarestado(){
 			GPDMA_ChannelStop(GPDMA_CH_0);	//desactiva DMA
 			
 			//Mostrar mensaje de espera en LCD 16x2
-			mensajeLCD();	//FALTA IMPLEMENTAR FUNCION EN LIBRERIA
+			mensajeLCD("  Juego de    ", "  Reaccion!   ");
 			
 			//Si se recibe el comando START_GAME por UART, cambiar a E_CONFIG.
 			if (flag_start_game) {
@@ -347,9 +361,8 @@ void actualizarestado(){
 // --- MANEJO DE INTERRUPCIONES (NVIC) ---
 void TIMER0_IRQHandler(void)
 {
+    // MR0 tiene intEn = DISABLE (solo trigger DMA), esta IRQ no se dispara en operación normal.
     TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
-
-    msTicks++;
 }
 
 void TIMER1_IRQHandler(void) {
@@ -363,8 +376,8 @@ void TIMER1_IRQHandler(void) {
         // Guardamos el tiempo exacto de reacción
         tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_COUNTER_INCAP0);
 
-        // Leemos qué tecla se presionó físicamente
-        tecla_presionada = LeerTeclaMatricial();
+        // Leemos qué tecla presionó J1 en su teclado
+        tecla_presionada = EscanearTecladoJ1();
 
         // Comparamos contra la ÚNICA tecla objetivo
         if (tecla_presionada == tecla_objetivo) {
@@ -387,8 +400,8 @@ void TIMER1_IRQHandler(void) {
         // Guardamos el tiempo exacto de reacción
         tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_COUNTER_INCAP1);
 
-        // Leemos qué tecla se presionó físicamente
-        tecla_presionada = LeerTeclaMatricial();
+        // Leemos qué tecla presionó J2 en su teclado
+        tecla_presionada = EscanearTecladoJ2();
 
         // Comparamos contra la ÚNICA tecla objetivo
         if (tecla_presionada == tecla_objetivo) {
@@ -410,7 +423,9 @@ void UART0_IRQHandler(void) {
 }
 
 void DMA_IRQHandler(void) {
-    // Control de finalización de reproducción de audio.
-    // Limpiar flag de interrupción del DMA y avisar a la FSM.
+    // Limpiar flag de interrupción del DMA sin esto queda forever loop
+    GPDMA_ClearIntPending(GPDMA_CH_0);
+
+    // Avisar a la FSM que terminó la reproducción
     flag_dma_audio_done = 1;
 }

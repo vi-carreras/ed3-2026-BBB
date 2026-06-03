@@ -11,6 +11,10 @@
 #include "LPC17xx.h"
 #include "lpc17xx_i2c.h"
 
+// Contador de ms del sistema, incrementado por SysTick_Handler en main.c
+extern volatile uint32_t msTicks;
+
+void retardo_ms(uint32_t ms);
 
 uint8_t EscanearTecladoJ1(void);
 
