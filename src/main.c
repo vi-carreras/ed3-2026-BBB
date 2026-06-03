@@ -9,6 +9,7 @@
 #include "lpc17xx_gpdma.h"
 #include "lcd.h"
 #include "teclado.h"
+#include "uart.h"
 #include "audio.h"
 #include "lpc17xx_systick.h"
 
@@ -353,30 +354,36 @@ void actualizarestado(){
 				switch(resultado_ronda) {
 					case 0: // Timeout
 						mensajeLCD("TIEMPO AGOTADO ", "               ");
+						enviar_str("T\r\n");
 						break;
 					case 1: // J1 Acertó
 						victorias_j1++;
-						enviar('W');
-						enviar('1');
+						enviar_str("W1\r\n");
 						break;
 					case 2: // J2 Acertó
 						victorias_j2++;
-						enviar('W');
-						enviar('2');
+						enviar_str("W2\r\n");
 						break;
 					case 3: // J1 Incorrecto
 						if(victorias_j1 > 0) victorias_j1--;
-						enviar('E');
-						enviar('1');
+						enviar_str("E1\r\n");
 						break;
 					case 4: // J2 Incorrecto
 						if(victorias_j2 > 0) victorias_j2--;
-						enviar('E');
-						enviar('2');
+						enviar_str("E2\r\n");
 						break;
 					default:
 						break;
 				}
+
+				// Enviar scores S<J1>,<J2>\r\n
+				enviar_str("S");
+				if(victorias_j1 >= 10) enviar_char('0' + (victorias_j1 / 10));
+				enviar_char('0' + (victorias_j1 % 10));
+				enviar_char(',');
+				if(victorias_j2 >= 10) enviar_char('0' + (victorias_j2 / 10));
+				enviar_char('0' + (victorias_j2 % 10));
+				enviar_str("\r\n");
 
 				// Mostrar puntajes en LCD
 				l1[0] = 'J'; l1[1] = '1'; l1[2] = ':'; l1[3] = ' ';
@@ -394,6 +401,7 @@ void actualizarestado(){
 			if((msTicks - round_end_start) >= 2000) {
 				round_end_phase = 0;
 				if(victorias_j1 >= MAX_VICTORIAS || victorias_j2 >= MAX_VICTORIAS){
+					enviar_str(victorias_j1 >= MAX_VICTORIAS ? "G1\r\n" : "G2\r\n");
 					estado_actual = E_GAME_OVER;
 				} else {
 					countdown_phase = 0;
@@ -486,33 +494,82 @@ void TIMER1_IRQHandler(void) {
 }
 
 void UART1_IRQHandler(void) {
-	static uint8_t cmd_esperando = 0;
-	static uint8_t cmd_bytes = 0;
-	static uint8_t cmd_buf[2];
+	static char line_buf[16];
+	static uint8_t line_idx = 0;
 
 	uint8_t rx = UART_ReceiveByte(UART1);
 
-	if(cmd_esperando == 0){
-		switch(rx){
-			case 'S': flag_start_game = 1;        break;
-			case 'K': cmd_esperando = 'K'; cmd_bytes = 0; break;
-			case 'F': cmd_esperando = 'F'; cmd_bytes = 0; break;
-			case 'B': cmd_esperando = 'B'; cmd_bytes = 0; break;
-			case 'C': config_hecho = 1;           break;
+	// Fin de línea: procesar comando
+	if(rx == '\r' || rx == '\n') {
+		if(line_idx > 0) {
+			line_buf[line_idx] = '\0';
+			char cmd = line_buf[0] & ~0x20;  // uppercase
+
+			switch(cmd) {
+				case 'S':
+					flag_start_game = 1;
+					break;
+
+				case 'K':
+					if(line_idx >= 2)
+						tecla_objetivo = (uint8_t)line_buf[1];
+					break;
+
+				case 'F': {
+					uint16_t val = 0;
+					for(uint8_t i = 1; i < line_idx; i++){
+						char c = line_buf[i];
+						if(c >= '0' && c <= '9')
+							val = val * 10 + (uint16_t)(c - '0');
+						else
+							break;
+					}
+					if(val > 0) tono_frecuencia = val;
+					break;
+				}
+
+				case 'B': {
+					uint16_t val = 0;
+					for(uint8_t i = 1; i < line_idx; i++){
+						char c = line_buf[i];
+						if(c >= '0' && c <= '9')
+							val = val * 10 + (uint16_t)(c - '0');
+						else
+							break;
+					}
+					velocidad_beeps = (val > 200) ? 200 : (uint8_t)val;
+					break;
+				}
+
+				case 'C':
+					config_hecho = 1;
+					break;
+
+				case '?': {
+					// QUERY: responder con scores actuales
+					enviar_char('S');
+					if(victorias_j1 >= 10) enviar_char('0' + (victorias_j1 / 10));
+					enviar_char('0' + (victorias_j1 % 10));
+					enviar_char(',');
+					if(victorias_j2 >= 10) enviar_char('0' + (victorias_j2 / 10));
+					enviar_char('0' + (victorias_j2 % 10));
+					enviar_char('\r');
+					enviar_char('\n');
+					break;
+				}
+
+				case 'R':
+					victorias_j1 = 0;
+					victorias_j2 = 0;
+					break;
+			}
 		}
-	} else if(cmd_esperando == 'K'){
-		tecla_objetivo = rx;
-		cmd_esperando = 0;
-	} else if(cmd_esperando == 'F'){
-		cmd_buf[cmd_bytes++] = rx;
-		if(cmd_bytes >= 2){
-			tono_frecuencia = cmd_buf[0] | ((uint16_t)cmd_buf[1] << 8);
-			cmd_esperando = 0;
-		}
-	} else if(cmd_esperando == 'B'){
-		velocidad_beeps = (rx > 200) ? 200 : rx;
-		cmd_esperando = 0;
+		line_idx = 0;
 	}
+	else if(line_idx < sizeof(line_buf) - 1) {
+		line_buf[line_idx++] = (char)rx;
+	}
+	// buffer lleno sin \r\n: descartar silenciosamente
 }
 
 void DMA_IRQHandler(void) {

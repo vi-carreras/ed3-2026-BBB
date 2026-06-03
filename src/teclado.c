@@ -1,5 +1,4 @@
 #include "teclado.h"
-#include "lpc17xx_uart.h"
 #include "lcd.h"
 
 static const uint8_t keyboard[4][4] = {
@@ -12,12 +11,6 @@ static const uint8_t keyboard[4][4] = {
 static uint32_t fila;
 static int8_t columna;
 static uint8_t scan_data;
-static uint8_t dato_uart;
-
-void enviar(uint8_t dato){
-	while(!(UART_GetLineStatus(UART1) & UART_LSR_THRE));
-	UART_SendByte(UART1, dato);
-}
 
 uint8_t EscanearTecladoJ1(void){
 	for(fila=0;fila<4;fila++){
