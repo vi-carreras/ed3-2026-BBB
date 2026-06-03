@@ -2,7 +2,6 @@
 #include "lpc17xx_dac.h"
 #include "lpc17xx_gpdma.h"
 #include "lpc17xx_timer.h"
-#include "lpc17xx_pinsel.h"
 #include "LPC17xx.h"
 #include <math.h>
 
@@ -30,28 +29,8 @@ void Audio_GenerateTone(uint32_t* buffer, uint32_t samples, uint32_t frecuencia)
 
 void Audio_Play(uint32_t* buffer, uint32_t size){
 
-	TIM_TIMERCFG_T tmcfg;
-	tmcfg.prescaleOpt = TIM_US;
-	tmcfg.prescaleValue = 1;
-
-	Tim_InitTimer(&tmcfg);
-
-	TIM_MATCHCFG_T mcfg;
-	mcfg.channel = TIM_MATCH_0;
-	mcfg.intEn = DISABLE;
-	mcfg.stopEn = DISABLE;
-	mcfg.resetEn = ENABLE;
-	mcfg.extOpt = TIM_NOTHING;
-	mcfg.matchValue = 1000000 / SAMPLE_RATE_HZ;
-	TIM_ConfigMatch(LPC_TIM0, &mcfg);
-
-	DAC_CONVERTER_CFG_T dacfg;
-	dacfg.doubleBuffer = DISABLE;
-	dacfg.dmaCounter = ENABLE;
-	dacfg.dmaRequest = ENABLE;
-	DAC_ConfigDAConverterControl(&dacfg);
-
-	DAC_SetDMATimeOut((uint32_t)(25000000 / SAMPLE_RATE_HZ));
+	// TIM0, DAC y DMA engine ya fueron configurados por main.
+	// Acá solo se configura el canal DMA con el buffer actual y se arranca.
 
 	GPDMA_Endpoint_T src;
 	src.width = GPDMA_WORD;

@@ -128,62 +128,49 @@ void configI2C0(void)
 
 void configDAC(void)
 {
-    PINSEL_CFG_T pinCfg= {PORT_0, PIN_26, PINSEL_FUNC_10, PINSEL_TRISTATE, DISABLE};
-    PINSEL_ConfigPin(&pinCfg);	//conf de DAC output P0[26]
-    
-    DAC_Init();
-    DAC_SetBias(DAC_700uA);
-    
-    DAC_UpdateValue(0);
+	PINSEL_CFG_T pinCfg= {PORT_0, PIN_26, PINSEL_FUNC_10, PINSEL_TRISTATE, DISABLE};
+	PINSEL_ConfigPin(&pinCfg);	//conf de DAC output P0[26]
+
+	DAC_Init();
+	DAC_SetBias(DAC_700uA);
+	DAC_UpdateValue(0);
+
+	// DAC en modo DMA — las transferencias las dispara TIM0 MR0
+	DAC_CONVERTER_CFG_T dacfg;
+	dacfg.doubleBuffer = DISABLE;
+	dacfg.dmaCounter = ENABLE;
+	dacfg.dmaRequest = ENABLE;
+	DAC_ConfigDAConverterControl(&dacfg);
+
+	DAC_SetDMATimeOut(2500);		// 2500 * 1µs = 2,5 ms timeout
 }
 
-GPDMA_Channel_CFG_T dmaCfg={0}; //estructura global para poder recargar en cada "bip" del juego
 void configDMA(void)
 {
 	GPDMA_Init();
-	
-	dmaCfg.channelNum = GPDMA_CH_0;            // canal 0
-	dmaCfg.transferSize = 100;        		   // cantidad de datos: 100
-	dmaCfg.type = GPDMA_M2P;                   // mem a periférico
-	dmaCfg.srcMemAddr = (uint32_t)sonido_countdown;   // dir del arreglo en RAM
-	dmaCfg.dstMemAddr = (uint32_t)&(LPC_DAC->DACR);            
-	dmaCfg.dstConn = GPDMA_MAT0_0;                             
-	// configuracion origen
-	dmaCfg.src.width = GPDMA_WORD;        // 32 bits
-	dmaCfg.src.burst = GPDMA_BSIZE_1;     // 1 elemento
-	dmaCfg.src.increment = ENABLE;        // habilitacion p/recorrer el arreglo
-	// configuracion destino
-	dmaCfg.dst.width = GPDMA_WORD;        // 32 bits
-	dmaCfg.dst.burst = GPDMA_BSIZE_1;     
-	dmaCfg.dst.increment = DISABLE;       // destino fijo
-	dmaCfg.intTC = ENABLE;                                     
-	dmaCfg.intErr = ENABLE;                                    
-	dmaCfg.linkedList = 0;                // 0 para que se detenga al terminar las 100 muestras
-	GPDMA_SetupChannel(&dmaCfg);
-	
+	// El canal lo configura Audio_Play() dinámicamente con cada buffer
 }
 
 void configTIMER0(void)
 {
-    TIM_TIMERCFG_T timerCfg;
-    timerCfg.prescaleOpt = TIM_PRESCALE_USVAL;
-    timerCfg.prescaleValue = 1000;
+	// TIM0 es el scheduler del DAC: MR0 dispara cada sample por DMA
+	TIM_TIMERCFG_T timerCfg;
+	timerCfg.prescaleOpt = TIM_PRESCALE_USVAL;
+	timerCfg.prescaleValue = 1;			// 1 µs por tick
 
-    TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timerCfg);
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timerCfg);
 
-    TIM_MATCHCFG_T matchCfg;
-    matchCfg.channel = 0;
-    matchCfg.intEn  = DISABLE;
-    matchCfg.resetEn = ENABLE;
-    matchCfg.stopEn  = DISABLE;
-    matchCfg.extOpt = TIM_NOTHING;
-    matchCfg.matchValue   = 1;
+	TIM_MATCHCFG_T matchCfg;
+	matchCfg.channel = 0;
+	matchCfg.intEn   = DISABLE;			// No interrumpe, solo trigger DMA
+	matchCfg.resetEn = ENABLE;
+	matchCfg.stopEn  = DISABLE;
+	matchCfg.extOpt  = TIM_NOTHING;
+	matchCfg.matchValue = 100;			// 100 µs → 10 KHz
 
-    TIM_ConfigMatch(LPC_TIM0, &matchCfg);
+	TIM_ConfigMatch(LPC_TIM0, &matchCfg);
 
-    NVIC_EnableIRQ(TIMER0_IRQn);
-
-    TIM_Cmd(LPC_TIM0, ENABLE);
+	TIM_Cmd(LPC_TIM0, DISABLE);			// Apagado por defecto; Audio_Play lo prende
 }
 
 
