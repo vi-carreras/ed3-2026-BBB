@@ -8,7 +8,7 @@
 #define DAC_MAX_VALUE	1023U
 #define DAC_BIAS		512U
 
-static GPDMA_Channel_CFG_Type dmacfg;
+static GPDMA_Channel_CFG_T dmacfg;
 
 void Audio_GenerateTone(uint32_t* buffer, uint32_t samples, uint32_t frecuencia){
 	for(uint32_t i = 0; i < samples; i++) {

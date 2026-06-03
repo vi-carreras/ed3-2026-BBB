@@ -36,6 +36,8 @@ volatile estado_juego_t estado_actual = E_IDLE;
 uint32_t audio_buf[AUDIO_BUF_SIZE];
 
 volatile uint8_t countdown_phase = 0;  // 0=3, 1=2, 2=1, 3=GO, 4=hecho
+volatile uint8_t  round_end_phase = 0;  // 0=pendiente, 1=mostrando resultado
+volatile uint32_t round_end_start = 0;  // msTicks al iniciar pausa
 
 // --- Config de partida (desde UART) ---
 volatile uint8_t  tecla_objetivo = 'A';
@@ -46,8 +48,6 @@ volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibe com
 volatile uint8_t flag_dma_audio_done = 0;		//
 volatile uint8_t flag_capture_event = 0;		//
 volatile uint32_t tiempo_reaccion_jugador = 0;	//	tiempo de reacción que se envía en caso de ganador de ronda
-volatile uint8_t jugador_ganador = 0;
-
 // 0: Ninguno, 1: J1 Correcto, 2: J2 Correcto, 3: J1 Incorrecto, 4: J2 Incorrecto
 volatile uint8_t resultado_ronda = 0;
 
@@ -104,7 +104,7 @@ void configGPIO(void)   //revisar que inicialice correctamente todos los pines a
 	GPIO_SetDir(PORT_0, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
 	GPIO_SetDir(PORT_0, 0xF0, GPIO_INPUT); // [7:4] ->entradas
 	GPIO_ClearPins(PORT_0, 0xFF);
-	GPIO_SetMask(PORT_0, 0XFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
+	GPIO_SetMask(PORT_0, 0xFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
 
     //Puerto 2[7:0] para lectura teclado J2
 	pinCfg.port = PORT_2;
@@ -115,14 +115,14 @@ void configGPIO(void)   //revisar que inicialice correctamente todos los pines a
 	GPIO_SetDir(PORT_2, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
 	GPIO_SetDir(PORT_2, 0xF0, GPIO_INPUT); // [7:4] ->entradas
     GPIO_ClearPins(PORT_2, 0xFF);
-    GPIO_SetMask(PORT_2, 0XFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
+    GPIO_SetMask(PORT_2, 0xFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
 }
 
 void configUART1(void)
 {
     PINSEL_CFG_T pinCfg = {PORT_0, PIN_15, PINSEL_FUNC_01, PINSEL_PULLUP, DISABLE};
     PINSEL_ConfigPin(&pinCfg);	//config TXD1
-    pinCfg.Pinnum = PIN_16;
+    pinCfg.pin = PIN_16;
     PINSEL_ConfigPin(&pinCfg);	//config RXD1
 
     UART_CFG_T uartCfg = {115200 , UART_PARITY_NONE , UART_DBITS_8 , UART_STOPBIT_1};
@@ -347,50 +347,58 @@ void actualizarestado(){
 			break;
 
 		case E_ROUND_END:
-			switch(resultado_ronda) {
-				case 0: // Timeout
-					mensajeLCD("TIEMPO AGOTADO ", "               ");
-					// No se suman puntos
-					break;
-				case 1: // J1 Acertó
-					victorias_j1++;
-					UART_SendByte(UART1, 'W');
-					UART_SendByte(UART1, '1');
-					break;
-				case 2: // J2 Acertó
-					victorias_j2++;
-					UART_SendByte(UART1, 'W');
-					UART_SendByte(UART1, '2');
-					break;
-				case 3: // J1 Incorrecto
-					if(victorias_j1 > 0) victorias_j1--;
-					UART_SendByte(UART1, 'E');
-					UART_SendByte(UART1, '1');
-					break;
-				case 4: // J2 Incorrecto
-					if(victorias_j2 > 0) victorias_j2--;
-					UART_SendByte(UART1, 'E');
-					UART_SendByte(UART1, '2');
-					break;
+			if(round_end_phase == 0) {
+				round_end_phase = 1;
+
+				switch(resultado_ronda) {
+					case 0: // Timeout
+						mensajeLCD("TIEMPO AGOTADO ", "               ");
+						break;
+					case 1: // J1 Acertó
+						victorias_j1++;
+						enviar('W');
+						enviar('1');
+						break;
+					case 2: // J2 Acertó
+						victorias_j2++;
+						enviar('W');
+						enviar('2');
+						break;
+					case 3: // J1 Incorrecto
+						if(victorias_j1 > 0) victorias_j1--;
+						enviar('E');
+						enviar('1');
+						break;
+					case 4: // J2 Incorrecto
+						if(victorias_j2 > 0) victorias_j2--;
+						enviar('E');
+						enviar('2');
+						break;
+					default:
+						break;
+				}
+
+				// Mostrar puntajes en LCD
+				l1[0] = 'J'; l1[1] = '1'; l1[2] = ':'; l1[3] = ' ';
+				l1[4] = '0' + (victorias_j1 % 10); l1[5] = ' ';
+				for(int i = 6; i < 16; i++) l1[i] = ' ';
+				l2[0] = 'J'; l2[1] = '2'; l2[2] = ':'; l2[3] = ' ';
+				l2[4] = '0' + (victorias_j2 % 10); l2[5] = ' ';
+				for(int i = 6; i < 16; i++) l2[i] = ' ';
+				mensajeLCD(l1, l2);
+
+				round_end_start = msTicks;
 			}
 
-			// Mostrar puntajes en LCD
-			l1[0] = 'J'; l1[1] = '1'; l1[2] = ':'; l1[3] = ' ';
-			l1[4] = '0' + (victorias_j1 % 10); l1[5] = ' ';
-			for(int i = 6; i < 16; i++) l1[i] = ' ';
-			l2[0] = 'J'; l2[1] = '2'; l2[2] = ':'; l2[3] = ' ';
-			l2[4] = '0' + (victorias_j2 % 10); l2[5] = ' ';
-			for(int i = 6; i < 16; i++) l2[i] = ' ';
-			mensajeLCD(l1, l2);
-
-			// Pequeña pausa para mostrar el resultado antes de la próxima ronda
-			retardo_ms(2000);
-
-			if(victorias_j1 >= MAX_VICTORIAS || victorias_j2 >= MAX_VICTORIAS){
-				estado_actual = E_GAME_OVER;
-			} else {
-				countdown_phase = 0;
-				estado_actual = E_COUNTDOWN;
+			// Espera no bloqueante de 2 segundos
+			if((msTicks - round_end_start) >= 2000) {
+				round_end_phase = 0;
+				if(victorias_j1 >= MAX_VICTORIAS || victorias_j2 >= MAX_VICTORIAS){
+					estado_actual = E_GAME_OVER;
+				} else {
+					countdown_phase = 0;
+					estado_actual = E_COUNTDOWN;
+				}
 			}
 			break;
 
@@ -411,6 +419,9 @@ void actualizarestado(){
 
 			retardo_ms(500); // pausa antes de volver a IDLE
 			estado_actual = E_IDLE;
+			break;
+
+		default:
 			break;
 	}
 }
@@ -506,7 +517,7 @@ void UART1_IRQHandler(void) {
 
 void DMA_IRQHandler(void) {
     // Limpiar flag de interrupción del DMA sin esto queda forever loop
-    GPDMA_ClearIntPending(GPDMA_CH_0);
+    GPDMA_ClearIntPending(GPDMA_CLR_INTTC, GPDMA_CH_0);
 
     // Avisar a la FSM que terminó la reproducción
     flag_dma_audio_done = 1;
