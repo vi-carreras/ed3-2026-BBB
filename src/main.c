@@ -4,15 +4,13 @@
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_uart.h"
 #include "lpc17xx_i2c.h"
-#include "lpc17xx_adc.h"
 #include "lpc17xx_dac.h"
 #include "lpc17xx_timer.h"
 #include "lpc17xx_gpdma.h"
-#include "lpc17xx_nvic.h"
-#include "general.h"
+#include "lcd.h"
+#include "teclado.h"
 #include "audio.h"
 #include "lpc17xx_systick.h"
-#include <math.h>
 
 //---Variables de SysTick para msTicks (reloj del sistema)---
 volatile uint32_t msTicks = 0;
@@ -35,7 +33,6 @@ volatile estado_juego_t estado_actual = E_IDLE;
 
 // --- Audio ---
 #define AUDIO_BUF_SIZE   2000  // suficientes samples para cualquier beep
-#define SAMPLE_RATE_HZ   10000
 uint32_t audio_buf[AUDIO_BUF_SIZE];
 
 volatile uint8_t countdown_phase = 0;  // 0=3, 1=2, 2=1, 3=GO, 4=hecho
@@ -183,10 +180,10 @@ void configTIMER0(void)
 {
 	// TIM0 es el scheduler del DAC: MR0 dispara cada sample por DMA
 	TIM_TIMERCFG_T timerCfg;
-	timerCfg.prescaleOpt = TIM_PRESCALE_USVAL;
+	timerCfg.prescaleOpt = TIM_US;
 	timerCfg.prescaleValue = 1;			// 1 µs por tick
 
-	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timerCfg);
+	TIM_InitTimer(LPC_TIM0, &timerCfg);
 
 	TIM_MATCHCFG_T matchCfg;
 	matchCfg.channel = 0;
@@ -198,47 +195,31 @@ void configTIMER0(void)
 
 	TIM_ConfigMatch(LPC_TIM0, &matchCfg);
 
-	TIM_Cmd(LPC_TIM0, DISABLE);			// Apagado por defecto; Audio_Play lo prende
+	TIM_Disable(LPC_TIM0);			// Apagado por defecto; Audio_Play lo prende
 }
 
 
 void configTIMER1(void){
 	TIM_ResetCounter(LPC_TIM1);
-	
-	TIM_TIMERCFG_Type timerCfg;
-	timerCfg.PrescaleOption = TIM_PRESCALE_USVAL;
-	timerCfg.PrescaleValue = 1;		//1us
+
+	TIM_TIMERCFG_T timerCfg;
+	timerCfg.prescaleOpt = TIM_US;
+	timerCfg.prescaleValue = 1;		// 1 µs por tick
 	TIM_InitTimer(LPC_TIM1, &timerCfg);
-	
-	TIM_CAPTURECFG_Type capCfg;
-	capCfg.CaptureChannel = 0;                 // J1 -> Canal 0 (CAP1.0)
-	capCfg.RisingEdge     = ENABLE;		 	 // Flanco de subida 
-	capCfg.FallingEdge    = DISABLE;          
-	capCfg.IntOnCaption   = ENABLE;          // Interrumpir al capturar para guardar el dato
+
+	TIM_CAPTURECFG_T capCfg;
+	capCfg.channel    = TIM_CAPTURE_0;          // J1 -> Canal 0 (CAP1.0)
+	capCfg.risingEn   = ENABLE;		            // Flanco de subida
+	capCfg.fallingEn  = DISABLE;
+	capCfg.intEn      = ENABLE;                 // Interrupción al capturar
 	TIM_ConfigCapture(LPC_TIM1, &capCfg);
 	TIM_PinConfig(TIM_CAP1_0_P1_18);
-	
-	capCfg.CaptureChannel = 1;                 // J2 -> Canal 1 (CAP1.1)
+
+	capCfg.channel    = TIM_CAPTURE_1;          // J2 -> Canal 1 (CAP1.1)
 	TIM_ConfigCapture(LPC_TIM1, &capCfg);
 	TIM_PinConfig(TIM_CAP1_1_P1_19);
-	
-	NVIC_EnableIRQ(TIMER1_IRQn);	//habilitacion de interrupciones por timer1
-}
 
-static void generar_beep(uint32_t* buf, uint32_t samples, uint32_t freq){
-	for(uint32_t i = 0; i < samples; i++){
-		float ang = 2.0f * 3.14159f * freq * i / SAMPLE_RATE_HZ;
-		int32_t v = (int32_t)(512 + 512 * sinf(ang));
-		if(v < 0) v = 0;
-		if(v > 1023) v = 1023;
-		buf[i] = (uint32_t)(v << 6);
-	}
-}
-
-static void generar_silencio(uint32_t* buf, uint32_t samples){
-	for(uint32_t i = 0; i < samples; i++){
-		buf[i] = (uint32_t)(512 << 6);  // valor medio, DAC = Vdd/2
-	}
+	NVIC_EnableIRQ(TIMER1_IRQn);
 }
 
 void actualizarestado(){
@@ -279,7 +260,7 @@ void actualizarestado(){
 		case E_COUNTDOWN:
 			if(countdown_phase == 0){
 				// 3...
-				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				Audio_GenerateTone(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
 				mensajeLCD("3...           ", "               ");
 				flag_dma_audio_done = 0;
 				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
@@ -288,42 +269,42 @@ void actualizarestado(){
 			} else if(countdown_phase == 1 && flag_dma_audio_done){
 				flag_dma_audio_done = 0;
 				// Silencio entre beeps
-				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_GenerateSilence(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 2;
 
 			} else if(countdown_phase == 2 && flag_dma_audio_done){
 				// 2...
 				flag_dma_audio_done = 0;
-				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				Audio_GenerateTone(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
 				mensajeLCD("2...           ", "               ");
 				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 3;
 
 			} else if(countdown_phase == 3 && flag_dma_audio_done){
 				flag_dma_audio_done = 0;
-				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_GenerateSilence(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 4;
 
 			} else if(countdown_phase == 4 && flag_dma_audio_done){
 				// 1...
 				flag_dma_audio_done = 0;
-				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				Audio_GenerateTone(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
 				mensajeLCD("1...           ", "               ");
 				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 5;
 
 			} else if(countdown_phase == 5 && flag_dma_audio_done){
 				flag_dma_audio_done = 0;
-				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_GenerateSilence(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 6;
 
 			} else if(countdown_phase == 6 && flag_dma_audio_done){
 				// GO! — más agudo
 				flag_dma_audio_done = 0;
-				generar_beep(audio_buf, 200 * SAMPLE_RATE_HZ / 1000, tono_frecuencia * 2);
+				Audio_GenerateTone(audio_buf, 200 * SAMPLE_RATE_HZ / 1000, tono_frecuencia * 2);
 				mensajeLCD("GO!            ", "               ");
 				Audio_Play(audio_buf, 200 * SAMPLE_RATE_HZ / 1000);
 				countdown_phase = 7;
@@ -345,7 +326,7 @@ void actualizarestado(){
 			// Habilitar capture
 			NVIC_ClearPendingIRQ(TIMER1_IRQn);
 			NVIC_EnableIRQ(TIMER1_IRQn);
-			TIM_Cmd(LPC_TIM1, ENABLE);
+			TIM_Enable(LPC_TIM1);
 
 			flag_capture_event = 0;
 			resultado_ronda = 0;
@@ -358,7 +339,7 @@ void actualizarestado(){
 				estado_actual = E_ROUND_END;
 			}
 			else if ((msTicks - tiempo_inicio_espera) >= TIMEOUT_MS) {
-				TIM_Cmd(LPC_TIM1, DISABLE);
+				TIM_Disable(LPC_TIM1);
 				NVIC_DisableIRQ(TIMER1_IRQn);
 				resultado_ronda = 0;
 				estado_actual = E_ROUND_END;
@@ -417,21 +398,16 @@ void actualizarestado(){
 			mensajeLCD("GANADOR:       ",
 				victorias_j1 >= MAX_VICTORIAS ? "JUGADOR 1      " : "JUGADOR 2      ");
 
-			// 3 tonos ascendentes cortos (2ms cada uno, 20 samples a 10KHz)
-			generar_beep(audio_buf, 20, 440);
-			Audio_Play(audio_buf, 20);
-			retardo_ms(50);
-			Audio_Stop();
-
-			generar_beep(audio_buf, 20, 660);
-			Audio_Play(audio_buf, 20);
-			retardo_ms(50);
-			Audio_Stop();
-
-			generar_beep(audio_buf, 20, 880);
-			Audio_Play(audio_buf, 20);
-			retardo_ms(50);
-			Audio_Stop();
+			// 3 tonos ascendentes cortos (20 samples cada uno a 10KHz)
+			{
+				uint16_t freqs[] = {440, 660, 880};
+				for(int i = 0; i < 3; i++){
+					Audio_GenerateTone(audio_buf, 20, freqs[i]);
+					Audio_Play(audio_buf, 20);
+					retardo_ms(50);
+					Audio_Stop();
+				}
+			}
 
 			retardo_ms(500); // pausa antes de volver a IDLE
 			estado_actual = E_IDLE;
@@ -469,7 +445,7 @@ void TIMER1_IRQHandler(void) {
 
         // Avisamos a la máquina de estados y apagamos capturas
         flag_capture_event = 1;
-        TIM_Cmd(LPC_TIM1, DISABLE);
+        TIM_Disable(LPC_TIM1);
         NVIC_DisableIRQ(TIMER1_IRQn);
     }
 
@@ -493,7 +469,7 @@ void TIMER1_IRQHandler(void) {
 
         // Avisamos a la máquina de estados y apagamos capturas
         flag_capture_event = 1;
-        TIM_Cmd(LPC_TIM1, DISABLE);
+        TIM_Disable(LPC_TIM1);
         NVIC_DisableIRQ(TIMER1_IRQn);
     }
 }

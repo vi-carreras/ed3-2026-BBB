@@ -1,0 +1,9 @@
+#ifndef TECLADO_H_
+#define TECLADO_H_
+
+#include "lcd.h"
+
+uint8_t EscanearTecladoJ1(void);
+uint8_t EscanearTecladoJ2(void);
+
+#endif
