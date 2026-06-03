@@ -252,7 +252,7 @@ void actualizarestado(){
 			TIM_ResetCounter(LPC_TIM0);
 			GPDMA_ChannelStop(GPDMA_CH_0);
 
-			mensajeLCD("Juego de       ", "Configurando...");
+			mensajeLCD("Juego Reacción ", "Configurando...");
 
 			if (flag_start_game) {
 				flag_start_game = 0;

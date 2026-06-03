@@ -65,18 +65,19 @@ static void lcd_init(void){
 static uint8_t lcd_inicializado = 0;
 
 void mensajeLCD(char* linea1, char* linea2){
+	uint8_t i;
 	if(!lcd_inicializado){
 		lcd_init();
 		lcd_inicializado = 1;
 	}
 	lcd_cmd(0x80);	// cursor inicio línea 1 (DDRAM 0x00)
-	for(uint8_t i=0; i<16 && linea1[i]; i++){
-		lcd_data((uint8_t)linea1[i]);
+	for(i=0; i<16; i++){
+		lcd_data(linea1[i] ? (uint8_t)linea1[i] : ' ');
 	}
 
 	lcd_cmd(0xC0);	// cursor inicio línea 2 (DDRAM 0x40)
-	for(uint8_t i=0; i<16 && linea2[i]; i++){
-		lcd_data((uint8_t)linea2[i]);
+	for(i=0; i<16; i++){
+		lcd_data(linea2[i] ? (uint8_t)linea2[i] : ' ');
 	}
 }
 
