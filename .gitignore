@@ -1,0 +1,28 @@
+# Proyecto MCUXpresso duplicado (no tocar, versión de los chicos)
+juego_reaccion/
+
+# Documentación local/no-trackeable
+doc/
+
+# MCUXpresso IDE
+.cproject
+.project
+.settings/
+.metadata/
+Debug/
+Release/
+*.launch
+
+# Binarios y objetos
+*.o
+*.axf
+*.hex
+*.bin
+*.map
+*.crf
+*.d
+
+# Editor
+*.swp
+*~
+.DS_Store

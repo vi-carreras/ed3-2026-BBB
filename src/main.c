@@ -12,6 +12,7 @@
 #include "general.h"
 #include "audio.h"
 #include "lpc17xx_systick.h"
+#include <math.h>
 
 //---Variables de SysTick para msTicks (reloj del sistema)---
 volatile uint32_t msTicks = 0;
@@ -32,15 +33,23 @@ typedef enum{
 } estado_juego_t;
 volatile estado_juego_t estado_actual = E_IDLE;
 
-uint32_t sonido_countdown[100];
+// --- Audio ---
+#define AUDIO_BUF_SIZE   2000  // suficientes samples para cualquier beep
+#define SAMPLE_RATE_HZ   10000
+uint32_t audio_buf[AUDIO_BUF_SIZE];
+
+volatile uint8_t countdown_phase = 0;  // 0=3, 1=2, 2=1, 3=GO, 4=hecho
+
+// --- Config de partida (desde UART) ---
+volatile uint8_t  tecla_objetivo = 'A';
+volatile uint16_t tono_frecuencia = 440;   // Hz para beeps
+volatile uint16_t velocidad_beeps = 200;   // ms entre beeps
 
 volatile uint8_t flag_start_game = 0;			//	flag para notificar que se recibe comando de empezar juego
 volatile uint8_t flag_dma_audio_done = 0;		//
 volatile uint8_t flag_capture_event = 0;		//
 volatile uint32_t tiempo_reaccion_jugador = 0;	//	tiempo de reacción que se envía en caso de ganador de ronda
 volatile uint8_t jugador_ganador = 0;
-
-volatile uint8_t tecla_objetivo = 0; // misma tecla para J1 y J2
 
 // 0: Ninguno, 1: J1 Correcto, 2: J2 Correcto, 3: J1 Incorrecto, 4: J2 Incorrecto
 volatile uint8_t resultado_ronda = 0;
@@ -51,6 +60,7 @@ volatile uint8_t victorias_j2 = 0;
 #define MAX_VICTORIAS 10
 
 volatile uint32_t tiempo_inicio_espera = 0;	//timestamp de inicio de espera para timeout
+volatile uint8_t config_hecho = 0;	//flag: config completa desde UART, ir a COUNTDOWN
 
 #define TIMEOUT_MS 5000		//tiempo máximo de ingreso de respuesta
 
@@ -125,6 +135,10 @@ void configUART1(void)
     UART_FIFOConfig(UART1, &fifoCfg);	//cfg inicial de FIFO
     
     UART_TxEnable(UART1);
+
+    // Habilitar interrupción de recepción UART
+    UART_IntConfig(UART1, UART_INT_RBR, ENABLE);
+    NVIC_EnableIRQ(UART1_IRQn);
 }
 
 void configI2C0(void)
@@ -211,148 +225,215 @@ void configTIMER1(void){
 	NVIC_EnableIRQ(TIMER1_IRQn);	//habilitacion de interrupciones por timer1
 }
 
+static void generar_beep(uint32_t* buf, uint32_t samples, uint32_t freq){
+	for(uint32_t i = 0; i < samples; i++){
+		float ang = 2.0f * 3.14159f * freq * i / SAMPLE_RATE_HZ;
+		int32_t v = (int32_t)(512 + 512 * sinf(ang));
+		if(v < 0) v = 0;
+		if(v > 1023) v = 1023;
+		buf[i] = (uint32_t)(v << 6);
+	}
+}
+
+static void generar_silencio(uint32_t* buf, uint32_t samples){
+	for(uint32_t i = 0; i < samples; i++){
+		buf[i] = (uint32_t)(512 << 6);  // valor medio, DAC = Vdd/2
+	}
+}
+
 void actualizarestado(){
-    char buffer_lcd_l1[16];	//1ra línea de pantalla LCD
-	char buffer_lcd_l2[16];	//2da línea
-	
+	char l1[16], l2[16];
+
 	switch(estado_actual){
-		case E_IDLE:        
-			/* * El microcontrolador entra en estado de espera.
-			 * Acciones:
-			 */
-			
-			//Desactivar periféricos que no se usan (timers, DMA).
-			TIM_Disable(LPC_TIM1);	//desactiva timer1
+		case E_IDLE:
+			TIM_Disable(LPC_TIM1);
 			TIM_ResetCounter(LPC_TIM1);
-			TIM_Disable(LPC_TIM0);	//desactiva timer0
+			TIM_Disable(LPC_TIM0);
 			TIM_ResetCounter(LPC_TIM0);
-			GPDMA_ChannelStop(GPDMA_CH_0);	//desactiva DMA
-			
-			//Mostrar mensaje de espera en LCD 16x2
-			mensajeLCD("  Juego de    ", "  Reaccion!   ");
-			
-			//Si se recibe el comando START_GAME por UART, cambiar a E_CONFIG.
+			GPDMA_ChannelStop(GPDMA_CH_0);
+
+			mensajeLCD("Juego de       ", "Configurando...");
+
 			if (flag_start_game) {
 				flag_start_game = 0;
+				config_hecho = 0;
 				estado_actual = E_CONFIG;
 			}
 			break;
 
-		case E_CONFIG:  //INCOMPLETO
-			/* * La aplicación Java configura la partida mediante UART.
-			 * Acciones:
-			 */
-			
-			//Reiniciar puntajes y estadísticas al comenzar una nueva partida completa.
-			victorias_j1 = 0;
-			victorias_j2 = 0;
-			tiempo_reaccion_jugador = 0;
-			jugador_ganador = 0;
-			tecla_objetivo = 0;
-			resultado_ronda = 0;
+		case E_CONFIG:
+			mensajeLCD("Configurando   ", " partida...    ");
 
-			// FALTA Procesar la configuración recibida (configurar teclas, seleccionar tono)
-			
-			//Transición automática a E_COUNTDOWN una vez procesada la configuración.
-			estado_actual = E_COUNTDOWN;
-			break;
-
-		case E_COUNTDOWN:   //INCOMPLETO
-			/* * Se inicia la cuenta regresiva auditiva mediante DAC.
-			 * Acciones:
-			 * - Transición: Automática a E_WAIT_GO. La finalización de los tonos se
-			 * manejará mediante interrupciones (DMA IRQ / Timer IRQ).
-			 */
-
-			//Habilitar Timer0 y DMA para transferir samples al DAC.
-			
-			//Los sonidos se generan sincronizados por un Timer Match.
-			
-			//Transición automática a E_WAIT_GO. 
-			//La finalización de los tonos se manejará mediante interrupciones (DMA IRQ / Timer IRQ).
-			estado_actual = E_WAIT_GO;
-			break;
-
-		case E_WAIT_GO:     //INCOMPLETO
-			if (flag_dma_audio_done) {
-				// Mostrar tecla en LCD...
-
-				// Habilitar interrupciones de Input Capture
-				NVIC_ClearPendingIRQ(TIMER1_IRQn);
-				NVIC_EnableIRQ(TIMER1_IRQn);
-
-				flag_capture_event = 0;
+			// Esperar configuración por UART
+			// UART1_IRQHandler llena tecla_objetivo, tono_frecuencia, velocidad_beeps
+			if(config_hecho){
+				config_hecho = 0;
+				victorias_j1 = 0;
+				victorias_j2 = 0;
 				resultado_ronda = 0;
-
-				// Guardamos el "timestamp" de inicio usando msTicks para el timeout
-				tiempo_inicio_espera = msTicks;
-
-				estado_actual = E_WAIT_INPUT;
-			}
-			break;
-
-		case E_WAIT_INPUT:  //INCOMPLETO
-			// Opción 1: Alguien presionó una tecla (IRQ activó el flag)
-			if (flag_capture_event) {
-				estado_actual = E_ROUND_END;
-			}
-			// Opción 2: Pasó el tiempo de Timeout (Ej: 5000 ms)
-			else if ((msTicks - tiempo_inicio_espera) >= TIMEOUT_MS) {
-				// Desactivar capturas para que no interrumpan fuera de tiempo
-				TIM_Cmd(LPC_TIM1, DISABLE);
-				NVIC_DisableIRQ(TIMER1_IRQn);
-
-				resultado_ronda = 0; // 0 indicará un Empate/Timeout
-				estado_actual = E_ROUND_END;
-			}
-			break;
-
-		case E_ROUND_END:   //INCOMPLETO
-			/* Procesar el resultado de la ronda */
-			switch(resultado_ronda) {
-				case 0: // Timeout
-					// Ambos fallaron por lentos. No se suman ni restan puntos.
-					// Mostrar mensaje "TIEMPO AGOTADO" en LCD
-					break;
-				case 1: // J1 Acertó
-					victorias_j1++;
-					break;
-				case 2: // J2 Acertó
-					victorias_j2++;
-					break;
-				case 3: // J1 Presionó tecla incorrecta (Penalización)
-					if (victorias_j1 > 0) victorias_j1--;
-					break;
-				case 4: // J2 Presionó tecla incorrecta (Penalización)
-					if (victorias_j2 > 0) victorias_j2--;
-					break;
-			}
-
-			// Evaluar condición de victoria final
-			if (victorias_j1 >= MAX_VICTORIAS || victorias_j2 >= MAX_VICTORIAS) {
-				estado_actual = E_GAME_OVER;
-			} else {
-				// Nueva ronda
+				countdown_phase = 0;
 				estado_actual = E_COUNTDOWN;
 			}
 			break;
 
-		case E_GAME_OVER:   //INCOMPLETO
-			/* * Acciones:
-			 * - Anunciar al ganador definitivo en el LCD.
-			 * - Enviar comando a Java indicando el fin de la partida.
-			 * - Esperar un tiempo o un comando para volver a E_IDLE.
-			 */
+		case E_COUNTDOWN:
+			if(countdown_phase == 0){
+				// 3...
+				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				mensajeLCD("3...           ", "               ");
+				flag_dma_audio_done = 0;
+				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 1;
 
-			if (victorias_j1 >= MAX_VICTORIAS) {
-				// Display_ShowWinner(1);
-			} else {
-				// Display_ShowWinner(2);
+			} else if(countdown_phase == 1 && flag_dma_audio_done){
+				flag_dma_audio_done = 0;
+				// Silencio entre beeps
+				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 2;
+
+			} else if(countdown_phase == 2 && flag_dma_audio_done){
+				// 2...
+				flag_dma_audio_done = 0;
+				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				mensajeLCD("2...           ", "               ");
+				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 3;
+
+			} else if(countdown_phase == 3 && flag_dma_audio_done){
+				flag_dma_audio_done = 0;
+				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 4;
+
+			} else if(countdown_phase == 4 && flag_dma_audio_done){
+				// 1...
+				flag_dma_audio_done = 0;
+				generar_beep(audio_buf, 150 * SAMPLE_RATE_HZ / 1000, tono_frecuencia);
+				mensajeLCD("1...           ", "               ");
+				Audio_Play(audio_buf, 150 * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 5;
+
+			} else if(countdown_phase == 5 && flag_dma_audio_done){
+				flag_dma_audio_done = 0;
+				generar_silencio(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				Audio_Play(audio_buf, velocidad_beeps * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 6;
+
+			} else if(countdown_phase == 6 && flag_dma_audio_done){
+				// GO! — más agudo
+				flag_dma_audio_done = 0;
+				generar_beep(audio_buf, 200 * SAMPLE_RATE_HZ / 1000, tono_frecuencia * 2);
+				mensajeLCD("GO!            ", "               ");
+				Audio_Play(audio_buf, 200 * SAMPLE_RATE_HZ / 1000);
+				countdown_phase = 7;
+
+			} else if(countdown_phase == 7 && flag_dma_audio_done){
+				flag_dma_audio_done = 0;
+				countdown_phase = 0;
+				estado_actual = E_WAIT_GO;
+			}
+			break;
+
+		case E_WAIT_GO:
+			// Mostrar tecla objetivo en LCD
+			l1[0] = 'P'; l1[1] = 'r'; l1[2] = 'e'; l1[3] = 's'; l1[4] = 'i'; l1[5] = 'o'; l1[6] = 'n'; l1[7] = 'e'; l1[8] = ':'; l1[9] = ' ';
+			l1[10] = tecla_objetivo;
+			for(int i = 11; i < 16; i++) l1[i] = ' ';
+			mensajeLCD(l1, "               ");
+
+			// Habilitar capture
+			NVIC_ClearPendingIRQ(TIMER1_IRQn);
+			NVIC_EnableIRQ(TIMER1_IRQn);
+			TIM_Cmd(LPC_TIM1, ENABLE);
+
+			flag_capture_event = 0;
+			resultado_ronda = 0;
+			tiempo_inicio_espera = msTicks;
+			estado_actual = E_WAIT_INPUT;
+			break;
+
+		case E_WAIT_INPUT:
+			if (flag_capture_event) {
+				estado_actual = E_ROUND_END;
+			}
+			else if ((msTicks - tiempo_inicio_espera) >= TIMEOUT_MS) {
+				TIM_Cmd(LPC_TIM1, DISABLE);
+				NVIC_DisableIRQ(TIMER1_IRQn);
+				resultado_ronda = 0;
+				estado_actual = E_ROUND_END;
+			}
+			break;
+
+		case E_ROUND_END:
+			switch(resultado_ronda) {
+				case 0: // Timeout
+					mensajeLCD("TIEMPO AGOTADO ", "               ");
+					// No se suman puntos
+					break;
+				case 1: // J1 Acertó
+					victorias_j1++;
+					UART_SendByte(UART1, 'W');
+					UART_SendByte(UART1, '1');
+					break;
+				case 2: // J2 Acertó
+					victorias_j2++;
+					UART_SendByte(UART1, 'W');
+					UART_SendByte(UART1, '2');
+					break;
+				case 3: // J1 Incorrecto
+					if(victorias_j1 > 0) victorias_j1--;
+					UART_SendByte(UART1, 'E');
+					UART_SendByte(UART1, '1');
+					break;
+				case 4: // J2 Incorrecto
+					if(victorias_j2 > 0) victorias_j2--;
+					UART_SendByte(UART1, 'E');
+					UART_SendByte(UART1, '2');
+					break;
 			}
 
-			// Audio_Play(buffer_game_over, size); // Sonido épico de fin de juego
+			// Mostrar puntajes en LCD
+			l1[0] = 'J'; l1[1] = '1'; l1[2] = ':'; l1[3] = ' ';
+			l1[4] = '0' + (victorias_j1 % 10); l1[5] = ' ';
+			for(int i = 6; i < 16; i++) l1[i] = ' ';
+			l2[0] = 'J'; l2[1] = '2'; l2[2] = ':'; l2[3] = ' ';
+			l2[4] = '0' + (victorias_j2 % 10); l2[5] = ' ';
+			for(int i = 6; i < 16; i++) l2[i] = ' ';
+			mensajeLCD(l1, l2);
 
-			// Al terminar de mostrar el ganador, volvemos a IDLE para esperar un nuevo START_GAME
+			// Pequeña pausa para mostrar el resultado antes de la próxima ronda
+			retardo_ms(2000);
+
+			if(victorias_j1 >= MAX_VICTORIAS || victorias_j2 >= MAX_VICTORIAS){
+				estado_actual = E_GAME_OVER;
+			} else {
+				countdown_phase = 0;
+				estado_actual = E_COUNTDOWN;
+			}
+			break;
+
+		case E_GAME_OVER:
+			mensajeLCD("GANADOR:       ",
+				victorias_j1 >= MAX_VICTORIAS ? "JUGADOR 1      " : "JUGADOR 2      ");
+
+			// 3 tonos ascendentes cortos (2ms cada uno, 20 samples a 10KHz)
+			generar_beep(audio_buf, 20, 440);
+			Audio_Play(audio_buf, 20);
+			retardo_ms(50);
+			Audio_Stop();
+
+			generar_beep(audio_buf, 20, 660);
+			Audio_Play(audio_buf, 20);
+			retardo_ms(50);
+			Audio_Stop();
+
+			generar_beep(audio_buf, 20, 880);
+			Audio_Play(audio_buf, 20);
+			retardo_ms(50);
+			Audio_Stop();
+
+			retardo_ms(500); // pausa antes de volver a IDLE
 			estado_actual = E_IDLE;
 			break;
 	}
@@ -417,9 +498,34 @@ void TIMER1_IRQHandler(void) {
     }
 }
 
-void UART0_IRQHandler(void) {
-    // Recepción de comandos desde PC. -> ver funcionamiento de comunicación hacia la placa
-    // Leer el comando y activar flags como flag_start_game.
+void UART1_IRQHandler(void) {
+	static uint8_t cmd_esperando = 0;
+	static uint8_t cmd_bytes = 0;
+	static uint8_t cmd_buf[2];
+
+	uint8_t rx = UART_ReceiveByte(UART1);
+
+	if(cmd_esperando == 0){
+		switch(rx){
+			case 'S': flag_start_game = 1;        break;
+			case 'K': cmd_esperando = 'K'; cmd_bytes = 0; break;
+			case 'F': cmd_esperando = 'F'; cmd_bytes = 0; break;
+			case 'B': cmd_esperando = 'B'; cmd_bytes = 0; break;
+			case 'C': config_hecho = 1;           break;
+		}
+	} else if(cmd_esperando == 'K'){
+		tecla_objetivo = rx;
+		cmd_esperando = 0;
+	} else if(cmd_esperando == 'F'){
+		cmd_buf[cmd_bytes++] = rx;
+		if(cmd_bytes >= 2){
+			tono_frecuencia = cmd_buf[0] | ((uint16_t)cmd_buf[1] << 8);
+			cmd_esperando = 0;
+		}
+	} else if(cmd_esperando == 'B'){
+		velocidad_beeps = (rx > 200) ? 200 : rx;
+		cmd_esperando = 0;
+	}
 }
 
 void DMA_IRQHandler(void) {
