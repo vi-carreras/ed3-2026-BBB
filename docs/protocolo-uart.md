@@ -39,12 +39,14 @@ El LPC1769 envía mensajes de forma _unilateral_ (sin polling de la PC) a medida
 | `E` | `E<jugador>` | **ERROR**: el jugador presionó una tecla incorrecta | Al finalizar ronda con error | `E1\r\n` |
 | `T` | `T` | **TIMEOUT**: ningún jugador presionó a tiempo | Al finalizar ronda sin actividad | `T\r\n` |
 | `S` | `S<J1>,<J2>` | **SCORE**: scores acumulados de ambos jugadores | Después de cada ronda | `S5,3\r\n` |
+| `R` | `R<µs>` | **REACTION**: tiempo de reacción del ganador en microsegundos | Solo si hay ganador (W1/W2), después del resultado | `R2346000\r\n` |
 | `G` | `G<jugador>` | **GAME_OVER**: un jugador alcanzó `MAX_VICTORIAS` (10) | Al finalizar la partida | `G1\r\n` |
 
 ### Secuencia típica TX por ronda
 
 ```
 W1             ← ganó J1
+R1234000       ← tiempo de reacción 1,234 s
 S5,3           ← scores actualizados
 ```
 
@@ -62,6 +64,7 @@ Para game over, se envía después de la última ronda:
 
 ```
 W1
+R2346000
 S10,3
 G1             ← J1 ganó la partida
 ```

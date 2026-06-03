@@ -356,14 +356,39 @@ void actualizarestado(){
 						mensajeLCD("TIEMPO AGOTADO ", "               ");
 						enviar_str("T\r\n");
 						break;
-					case 1: // J1 Acertó
+					case 1: { // J1 Acertó
 						victorias_j1++;
 						enviar_str("W1\r\n");
+						// Enviar tiempo de reacción R<decimal>\r\n
+						uint32_t val = tiempo_reaccion_jugador;
+						char rbuf[8];
+						uint8_t rlen = 0;
+						do {
+							rbuf[rlen++] = '0' + (val % 10);
+							val /= 10;
+						} while(val > 0);
+						enviar_char('R');
+						for(int8_t i = (int8_t)rlen - 1; i >= 0; i--)
+							enviar_char(rbuf[i]);
+						enviar_str("\r\n");
 						break;
-					case 2: // J2 Acertó
+					}
+					case 2: { // J2 Acertó
 						victorias_j2++;
 						enviar_str("W2\r\n");
+						uint32_t val = tiempo_reaccion_jugador;
+						char rbuf[8];
+						uint8_t rlen = 0;
+						do {
+							rbuf[rlen++] = '0' + (val % 10);
+							val /= 10;
+						} while(val > 0);
+						enviar_char('R');
+						for(int8_t i = (int8_t)rlen - 1; i >= 0; i--)
+							enviar_char(rbuf[i]);
+						enviar_str("\r\n");
 						break;
+					}
 					case 3: // J1 Incorrecto
 						if(victorias_j1 > 0) victorias_j1--;
 						enviar_str("E1\r\n");
