@@ -528,7 +528,8 @@ void UART1_IRQHandler(void) {
 	if(rx == '\r' || rx == '\n') {
 		if(line_idx > 0) {
 			line_buf[line_idx] = '\0';
-			char cmd = line_buf[0] & ~0x20;  // uppercase
+			char cmd = line_buf[0];
+			if(cmd >= 'a' && cmd <= 'z') cmd -= 32;  // uppercase solo letras
 
 			switch(cmd) {
 				case 'S':
