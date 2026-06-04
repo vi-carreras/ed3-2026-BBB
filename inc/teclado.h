@@ -5,7 +5,7 @@
  *             P2 (J2) y retorna la tecla presionada.
  * @version     1.0
  * @date        04. June. 2026
- * @author      Victoria P.
+ * @author      Bombón, Burbuja y Bellota
  *
  * @par Refactor:
  * Last update: 04/06/2026, Author: David Trujillo Medina
