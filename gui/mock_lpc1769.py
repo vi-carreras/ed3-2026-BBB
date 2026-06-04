@@ -25,7 +25,7 @@ import threading
 
 E_IDLE, E_CONFIG, E_COUNTDOWN, E_WAIT_GO, E_ROUND_END, E_GAME_OVER = range(6)
 
-MAX_VICTORIAS = 3
+MAX_VICTORIAS = 10
 
 
 class MockLPC1769:
