@@ -1,10 +1,6 @@
 //---LIBRERIAS--------------------------------------------------------------------------
 #include "LPC17xx.h"
-#include "lpc17xx_gpio.h"
-#include "lpc17xx_pinsel.h"
 #include "lpc17xx_uart.h"
-#include "lpc17xx_i2c.h"
-#include "lpc17xx_dac.h"
 #include "lpc17xx_timer.h"
 #include "lpc17xx_gpdma.h"
 #include "lcd.h"
@@ -12,6 +8,7 @@
 #include "uart.h"
 #include "audio.h"
 #include "lpc17xx_systick.h"
+#include "perifericos.h"
 
 //---Variables de SysTick para msTicks (reloj del sistema)---
 volatile uint32_t msTicks = 0;
@@ -63,13 +60,6 @@ volatile uint8_t config_hecho = 0;	//flag: config completa desde UART, ir a COUN
 #define TIMEOUT_MS 10000		//tiempo máximo de ingreso de respuesta
 
 //---FUNCIONES-------------------------------------------------------------------------
-void configGPIO(void);		//pines
-void configUART1(void);		//inicializa comunicación UART por canal 1
-void configI2C0(void);		//inicializa comunicación I2C
-void configDAC(void);		//inicializa DAC
-void configDMA(void);		//inicializa DMA
-void configTIMER0(void);	//inicializa Timer0 para scheduler del DAC
-void configTIMER1(void);	//inicializa Timer1 para capture
 void actualizarestado(); //función actualizar máquina de estados
 
 
@@ -94,135 +84,6 @@ int main(void) {
 }
 
 //---FUNCIONES-------------------------------------------------------------------------
-void configGPIO(void)   //revisar que inicialice correctamente todos los pines a usar
-{
-	PINSEL_CFG_T pinCfg = {PORT_0, 0, PINSEL_FUNC_00, PINSEL_TRISTATE, DISABLE};
-
-    //Puerto 0[7:0] para lectura teclado J1
-	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
-	pinCfg.mode = PINSEL_PULLUP;
-	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
-	GPIO_SetDir(PORT_0, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
-	GPIO_SetDir(PORT_0, 0xF0, GPIO_INPUT); // [7:4] ->entradas
-	GPIO_ClearPins(PORT_0, 0xFF);
-	GPIO_SetMask(PORT_0, 0xFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
-
-    //Puerto 2[7:0] para lectura teclado J2
-	pinCfg.port = PORT_2;
-	pinCfg.mode = PINSEL_TRISTATE;
-	PINSEL_ConfigMultiplePins(&pinCfg, 0x0F); //-> [3:0]
-	pinCfg.mode = PINSEL_PULLUP;
-	PINSEL_ConfigMultiplePins(&pinCfg, 0xF0); //-> [7:4]
-	GPIO_SetDir(PORT_2, 0x0F, GPIO_OUTPUT);	//[3:0] -> salidas
-	GPIO_SetDir(PORT_2, 0xF0, GPIO_INPUT); // [7:4] ->entradas
-    GPIO_ClearPins(PORT_2, 0xFF);
-    GPIO_SetMask(PORT_2, 0xFFFFFF00, ENABLE);//Se enmascara los pines que no van a usar
-}
-
-void configUART1(void)
-{
-    PINSEL_CFG_T pinCfg = {PORT_0, PIN_15, PINSEL_FUNC_01, PINSEL_PULLUP, DISABLE};
-    PINSEL_ConfigPin(&pinCfg);	//config TXD1
-    pinCfg.pin = PIN_16;
-    PINSEL_ConfigPin(&pinCfg);	//config RXD1
-
-    UART_CFG_T uartCfg = {115200 , UART_PARITY_NONE , UART_DBITS_8 , UART_STOPBIT_1};
-    UART_Init(UART1, &uartCfg);	//Config inicial UART1 p transmitir a 115200 baudios en cfg 8N1
-
-    UART_FIFO_CFG_T fifoCfg = {ENABLE , ENABLE , DISABLE , UART_FIFO_TRGLEV0};
-    UART_FIFOConfig(UART1, &fifoCfg);	//cfg inicial de FIFO
-    
-    UART_TxEnable(UART1);
-
-    // Habilitar interrupción de recepción UART
-    UART_IntConfig(UART1, UART_INT_RBR, ENABLE);
-    NVIC_EnableIRQ(UART1_IRQn);
-}
-
-void configI2C0(void)
-{
-	PINSEL_CFG_T pinCfg = {PORT_0, PIN_27, PINSEL_FUNC_01, PINSEL_PULLUP, ENABLE};
-    PINSEL_ConfigPin(&pinCfg);	//cfg de SDA0
-
-    pinCfg.pin = PIN_28;
-    PINSEL_ConfigPin(&pinCfg);	//cfg de SCL0
-
-    I2C_Init(LPC_I2C0, 100000);	//inicializa en 100KHz
-    
-    I2C_Cmd(LPC_I2C0, ENABLE);	//habilita interfaz
-}
-
-void configDAC(void)
-{
-	PINSEL_CFG_T pinCfg= {PORT_0, PIN_26, PINSEL_FUNC_10, PINSEL_TRISTATE, DISABLE};
-	PINSEL_ConfigPin(&pinCfg);	//conf de DAC output P0[26]
-
-	DAC_Init();
-	DAC_SetBias(DAC_700uA);
-	DAC_UpdateValue(0);
-
-	// DAC en modo DMA — las transferencias las dispara TIM0 MR0
-	DAC_CONVERTER_CFG_T dacfg;
-	dacfg.doubleBuffer = DISABLE;
-	dacfg.dmaCounter = ENABLE;
-	dacfg.dmaRequest = ENABLE;
-	DAC_ConfigDAConverterControl(&dacfg);
-
-	DAC_SetDMATimeOut(2500);		// 2500 * 1µs = 2,5 ms timeout
-}
-
-void configDMA(void)
-{
-	GPDMA_Init();
-	// El canal lo configura Audio_Play() dinámicamente con cada buffer
-}
-
-void configTIMER0(void)
-{
-	// TIM0 es el scheduler del DAC: MR0 dispara cada sample por DMA
-	TIM_TIMERCFG_T timerCfg;
-	timerCfg.prescaleOpt = TIM_US;
-	timerCfg.prescaleValue = 1;			// 1 µs por tick
-
-	TIM_InitTimer(LPC_TIM0, &timerCfg);
-
-	TIM_MATCHCFG_T matchCfg;
-	matchCfg.channel = 0;
-	matchCfg.intEn   = DISABLE;			// No interrumpe, solo trigger DMA
-	matchCfg.resetEn = ENABLE;
-	matchCfg.stopEn  = DISABLE;
-	matchCfg.extOpt  = TIM_NOTHING;
-	matchCfg.matchValue = 100;			// 100 µs → 10 KHz
-
-	TIM_ConfigMatch(LPC_TIM0, &matchCfg);
-
-	TIM_Disable(LPC_TIM0);			// Apagado por defecto; Audio_Play lo prende
-}
-
-
-void configTIMER1(void){
-	TIM_ResetCounter(LPC_TIM1);
-
-	TIM_TIMERCFG_T timerCfg;
-	timerCfg.prescaleOpt = TIM_US;
-	timerCfg.prescaleValue = 1;		// 1 µs por tick
-	TIM_InitTimer(LPC_TIM1, &timerCfg);
-
-	TIM_CAPTURECFG_T capCfg;
-	capCfg.channel    = TIM_CAPTURE_0;          // J1 -> Canal 0 (CAP1.0)
-	capCfg.risingEn   = ENABLE;		            // Flanco de subida
-	capCfg.fallingEn  = DISABLE;
-	capCfg.intEn      = ENABLE;                 // Interrupción al capturar
-	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-	TIM_PinConfig(TIM_CAP1_0_P1_18);
-
-	capCfg.channel    = TIM_CAPTURE_1;          // J2 -> Canal 1 (CAP1.1)
-	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-	TIM_PinConfig(TIM_CAP1_1_P1_19);
-
-	NVIC_EnableIRQ(TIMER1_IRQn);
-}
-
 void actualizarestado(){
 	char l1[16], l2[16];
 
