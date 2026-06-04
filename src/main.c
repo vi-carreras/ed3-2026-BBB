@@ -60,7 +60,7 @@ volatile uint8_t victorias_j2 = 0;
 volatile uint32_t tiempo_inicio_espera = 0;	//timestamp de inicio de espera para timeout
 volatile uint8_t config_hecho = 0;	//flag: config completa desde UART, ir a COUNTDOWN
 
-#define TIMEOUT_MS 5000		//tiempo máximo de ingreso de respuesta
+#define TIMEOUT_MS 10000		//tiempo máximo de ingreso de respuesta
 
 //---FUNCIONES-------------------------------------------------------------------------
 void configGPIO(void);		//pines
