@@ -6,6 +6,12 @@
  *             Los handlers son referenciados por nombre desde la vector
  *             table en startup_LPC17xx.s; no se llaman desde el código
  *             de aplicación directamente.
+ * @version     1.0
+ * @date        04. June. 2026
+ * @author      Victoria P.
+ *
+ * @par Refactor:
+ * Last update: 04/06/2026, Author: David Trujillo Medina
  */
 
 #ifndef HANDLERS_H_
@@ -13,9 +19,30 @@
 
 #include "LPC17xx.h"
 
+/* ------------------------- Manejadores de IRQ ---------------------------- */
+/**
+ * @brief  Handler de TIM0. Limpia el flag de interrupción MR0.
+ * @note   MR0 tiene intEn = DISABLE (solo trigger DMA), por lo que
+ *         esta IRQ no se dispara en operación normal.
+ */
 void TIMER0_IRQHandler(void);
+
+/**
+ * @brief  Handler de TIM1. Captura tiempo de reacción para J1 (CAP1.0)
+ *         y J2 (CAP1.1), lee la tecla presionada y actualiza el resultado.
+ */
 void TIMER1_IRQHandler(void);
+
+/**
+ * @brief  Handler de UART1. Acumula caracteres recibidos y procesa
+ *         comandos al recibir \r o \n.
+ */
 void UART1_IRQHandler(void);
+
+/**
+ * @brief  Handler de DMA. Limpia el flag de interrupción del canal 0
+ *         y notifica a la FSM que terminó la reproducción de audio.
+ */
 void DMA_IRQHandler(void);
 
 #endif /* HANDLERS_H_ */
