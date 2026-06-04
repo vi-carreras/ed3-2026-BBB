@@ -90,8 +90,7 @@ class MockLPC1769:
             pass
 
     def _enviar_scores(self):
-        msg = f"S{self.victorias_j1:02d},{self.victorias_j2:02d}\r\n"
-        os.write(self.master_fd, msg.encode())
+        self._enviar(f"S{self.victorias_j1:02d},{self.victorias_j2:02d}")
 
     def _simular_ronda(self):
         """Simula countdown → wait → resultado → scores → loop."""
@@ -158,8 +157,10 @@ class MockLPC1769:
             time.sleep(1.0)
             self.estado = E_IDLE
         else:
-            # Siguiente ronda (vuelve a countdown automático)
-            self.estado = E_CONFIG
+            # Siguiente ronda (vuelve a countdown, igual que firmware real)
+            self.estado = E_COUNTDOWN
+            # Auto-lanzar siguiente ronda
+            threading.Thread(target=self._simular_ronda, daemon=True).start()
 
     def run(self):
         # Crear PTY: master = lo que escribe el mock, slave = "puerto serial"
@@ -179,18 +180,36 @@ class MockLPC1769:
 
         # Buffer de lectura
         buf = ""
+        stdin_buf = ""
 
-        # Si stdin no es una terminal (background/pipe), no escuchar comandos de consola
+        # Solo escuchar stdin si es una terminal real
         fd_list = [self.master_fd]
-        stdin_ok = os.isatty(0)
+        if os.isatty(0):
+            fd_list.append(0)
 
         try:
             while True:
                 rlist, _, _ = select.select(fd_list, [], [], 0.1)
 
                 for fd in rlist:
-                    if fd == self.master_fd:
-                        # Datos desde la GUI
+                    if fd == 0:
+                        # Comandos desde la consola del mock
+                        try:
+                            ch = os.read(0, 64).decode("ascii", errors="replace")
+                        except (OSError, EOFError):
+                            continue
+                        if not ch:
+                            continue
+                        for c in ch:
+                            if c == '\n' or c == '\r':
+                                if stdin_buf.strip():
+                                    self._procesar_consola(stdin_buf)
+                                stdin_buf = ""
+                            else:
+                                stdin_buf += c
+
+                    elif fd == self.master_fd:
+                        # Datos desde la GUI (comandos)
                         try:
                             data = os.read(self.master_fd, 64).decode("ascii", errors="replace")
                         except OSError:
