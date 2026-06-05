@@ -21,8 +21,8 @@ void actualizarestado(void)
 
 	switch(estado_actual){
 		case E_IDLE:
-			TIM_Disable(LPC_TIM1);
-			TIM_ResetCounter(LPC_TIM1);
+			TIM_Disable(LPC_TIM3);
+			TIM_ResetCounter(LPC_TIM3);
 			TIM_Disable(LPC_TIM0);
 			TIM_ResetCounter(LPC_TIM0);
 			GPDMA_ChannelStop(GPDMA_CH_0);
@@ -109,9 +109,9 @@ void actualizarestado(void)
 			for(int i = 11; i < 16; i++) l1[i] = ' ';
 			mensajeLCD(l1, "               ");
 
-			NVIC_ClearPendingIRQ(TIMER1_IRQn);
-			NVIC_EnableIRQ(TIMER1_IRQn);
-			TIM_Enable(LPC_TIM1);
+			NVIC_ClearPendingIRQ(TIMER3_IRQn);
+			NVIC_EnableIRQ(TIMER3_IRQn);
+			TIM_Enable(LPC_TIM3);
 
 			flag_capture_event = 0;
 			resultado_ronda = 0;
@@ -124,8 +124,8 @@ void actualizarestado(void)
 				estado_actual = E_ROUND_END;
 			}
 			else if ((msTicks - tiempo_inicio_espera) >= TIMEOUT_MS) {
-				TIM_Disable(LPC_TIM1);
-				NVIC_DisableIRQ(TIMER1_IRQn);
+				TIM_Disable(LPC_TIM3);
+				NVIC_DisableIRQ(TIMER3_IRQn);
 				resultado_ronda = 0;
 				estado_actual = E_ROUND_END;
 			}

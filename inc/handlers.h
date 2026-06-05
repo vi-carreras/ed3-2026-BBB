@@ -28,10 +28,10 @@
 void TIMER0_IRQHandler(void);
 
 /**
- * @brief  Handler de TIM1. Captura tiempo de reacción para J1 (CAP1.0)
- *         y J2 (CAP1.1), lee la tecla presionada y actualiza el resultado.
+ * @brief  Handler de TIM3. Captura tiempo de reacción para J1 (CAP3.0)
+ *         y J2 (CAP3.1), lee la tecla presionada y actualiza el resultado.
  */
-void TIMER1_IRQHandler(void);
+void TIMER3_IRQHandler(void);
 
 /**
  * @brief  Handler de UART1. Acumula caracteres recibidos y procesa

@@ -56,10 +56,10 @@ void configDMA(void);
 void configTIMER0(void);
 
 /**
- * @brief  Configura TIM1 con capture para medir tiempo de reacción.
- *         CAP1.0 (P1.18) para J1, CAP1.1 (P1.19) para J2,
+ * @brief  Configura TIM3 con capture para medir tiempo de reacción.
+ *         CAP3.0 (P0.23) para J1, CAP3.1 (P0.24) para J2,
  *         con resolución de 1 µs.
  */
-void configTIMER1(void);
+void configTIMER3(void);
 
 #endif /* PERIFERICOS_H_ */

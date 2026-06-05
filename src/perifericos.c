@@ -132,28 +132,28 @@ void configTIMER0(void)
 }
 
 /*----------------------------------------------------------------------------
-  configTIMER1: TIM1 con capture para medir tiempo de reacción (1 µs res.)
+  configTIMER3: TIM3 con capture para medir tiempo de reacción (1 µs res.)
  *----------------------------------------------------------------------------*/
-void configTIMER1(void)
+void configTIMER3(void)
 {
-	TIM_ResetCounter(LPC_TIM1);
+	TIM_ResetCounter(LPC_TIM3);
 
 	TIM_TIMERCFG_T timerCfg;
 	timerCfg.prescaleOpt  = TIM_US;
 	timerCfg.prescaleValue = 1;		  // 1 µs / tick
-	TIM_InitTimer(LPC_TIM1, &timerCfg);
+	TIM_InitTimer(LPC_TIM3, &timerCfg);
 
 	TIM_CAPTURECFG_T capCfg;
-	capCfg.channel   = TIM_CAPTURE_0; // J1 -> CAP1.0
+	capCfg.channel   = TIM_CAPTURE_0; // J1 -> CAP3.0 (P0.23)
 	capCfg.risingEn  = ENABLE;
 	capCfg.fallingEn = DISABLE;
 	capCfg.intEn     = ENABLE;
-	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-	TIM_PinConfig(TIM_CAP1_0_P1_18);
+	TIM_ConfigCapture(LPC_TIM3, &capCfg);
+	TIM_PinConfig(TIM_CAP3_0_P0_23);
 
-	capCfg.channel   = TIM_CAPTURE_1; // J2 -> CAP1.1
-	TIM_ConfigCapture(LPC_TIM1, &capCfg);
-	TIM_PinConfig(TIM_CAP1_1_P1_19);
+	capCfg.channel   = TIM_CAPTURE_1; // J2 -> CAP3.1 (P0.24)
+	TIM_ConfigCapture(LPC_TIM3, &capCfg);
+	TIM_PinConfig(TIM_CAP3_1_P0_24);
 
-	NVIC_EnableIRQ(TIMER1_IRQn);
+	NVIC_EnableIRQ(TIMER3_IRQn);
 }

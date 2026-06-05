@@ -51,7 +51,7 @@ int main(void) {
 	configDAC();
 	configDMA();
 	configTIMER0();
-	configTIMER1();
+	configTIMER3();
 
 	// SysTick cada 1ms para msTicks (reemplaza TIM0 MR1 que no puede convivir con MR0)
 	SYSTICK_InternalInit(1);

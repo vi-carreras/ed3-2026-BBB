@@ -4,7 +4,7 @@
  *             juego de reacción competitivo para LPC1769.
  *
  *             TIMER0_IRQHandler  — Limpia pendiente de MR0 (solo trigger DMA)
- *             TIMER1_IRQHandler  — Capture de tiempo de reacción (J1 / J2)
+ *             TIMER3_IRQHandler  — Capture de tiempo de reacción (J1 / J2)
  *             UART1_IRQHandler   — Receptor de comandos serie
  *             DMA_IRQHandler     — Notifica fin de reproducción de audio
  */
@@ -27,18 +27,18 @@ void TIMER0_IRQHandler(void)
 }
 
 /*----------------------------------------------------------------------------
-  TIMER1_IRQHandler: Capture de tiempo de reacción para J1 (CAP1.0) y
-  J2 (CAP1.1). Lee la tecla presionada, compara con la objetivo y
+  TIMER3_IRQHandler: Capture de tiempo de reacción para J1 (CAP3.0) y
+  J2 (CAP3.1). Lee la tecla presionada, compara con la objetivo y
   guarda el resultado para que la FSM lo procese.
  *----------------------------------------------------------------------------*/
-void TIMER1_IRQHandler(void)
+void TIMER3_IRQHandler(void)
 {
     uint8_t tecla_presionada = 0;
 
-    // --- JUGADOR 1 (CAP1.0) ---
-    if (TIM_GetIntStatus(LPC_TIM1, TIM_CR0_INT)) {
-        TIM_ClearIntPending(LPC_TIM1, TIM_CR0_INT);
-        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_CAPTURE_0);
+    // --- JUGADOR 1 (CAP3.0 - P0.23) ---
+    if (TIM_GetIntStatus(LPC_TIM3, TIM_CR0_INT)) {
+        TIM_ClearIntPending(LPC_TIM3, TIM_CR0_INT);
+        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM3, TIM_CAPTURE_0);
 
         tecla_presionada = EscanearTecladoJ1();
 
@@ -49,14 +49,14 @@ void TIMER1_IRQHandler(void)
         }
 
         flag_capture_event = 1;
-        TIM_Disable(LPC_TIM1);
-        NVIC_DisableIRQ(TIMER1_IRQn);
+        TIM_Disable(LPC_TIM3);
+        NVIC_DisableIRQ(TIMER3_IRQn);
     }
 
-    // --- JUGADOR 2 (CAP1.1) ---
-    else if (TIM_GetIntStatus(LPC_TIM1, TIM_CR1_INT)) {
-        TIM_ClearIntPending(LPC_TIM1, TIM_CR1_INT);
-        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM1, TIM_CAPTURE_1);
+    // --- JUGADOR 2 (CAP3.1 - P0.24) ---
+    else if (TIM_GetIntStatus(LPC_TIM3, TIM_CR1_INT)) {
+        TIM_ClearIntPending(LPC_TIM3, TIM_CR1_INT);
+        tiempo_reaccion_jugador = TIM_GetCaptureValue(LPC_TIM3, TIM_CAPTURE_1);
 
         tecla_presionada = EscanearTecladoJ2();
 
@@ -67,8 +67,8 @@ void TIMER1_IRQHandler(void)
         }
 
         flag_capture_event = 1;
-        TIM_Disable(LPC_TIM1);
-        NVIC_DisableIRQ(TIMER1_IRQn);
+        TIM_Disable(LPC_TIM3);
+        NVIC_DisableIRQ(TIMER3_IRQn);
     }
 }
 
