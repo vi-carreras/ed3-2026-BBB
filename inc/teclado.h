@@ -15,6 +15,16 @@
 #define TECLADO_H_
 
 #include <stdint.h>
+# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
+
+
+---
+
+## Título
+
+```
+
+```
 
 /* --------------------------- Funciones públicas --------------------------- */
 /**

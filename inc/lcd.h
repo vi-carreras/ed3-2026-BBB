@@ -1,3 +1,4 @@
+
 /**
  * @file        lcd.h
  * @brief       LCD 16x2 driver via I2C (PCF8574) y función de retardo
@@ -30,6 +31,17 @@ void retardo_ms(uint32_t ms);
  * @brief  Muestra dos líneas de texto en el LCD 16x2.
  * @param  linea1  Cadena para la línea superior (hasta 16 caracteres).
  * @param  linea2  Cadena para la línea inferior (hasta 16 caracteres).
+# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
+
+Merge `development` → `main`
+
+---
+
+## Título
+
+```
+
+```
  */
 void mensajeLCD(char* linea1, char* linea2);
 

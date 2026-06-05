@@ -3,6 +3,7 @@
 #include "perifericos.h"
 #include "maquinaestados.h"
 
+
 //---Variables de SysTick para msTicks (reloj del sistema)---
 volatile uint32_t msTicks = 0;
 
@@ -63,5 +64,4 @@ int main(void) {
 	}
 	// return 0; — no se llega nunca
 }
-
 

@@ -1,3 +1,11 @@
+# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
+---
+
+## Título
+
+```
+
+```
 /**
  * @file        audio.h
  * @brief       Generación y reproducción de tonos por DAC + DMA.

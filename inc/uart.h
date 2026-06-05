@@ -15,6 +15,17 @@
 #define UART_H_
 
 #include <stdint.h>
+# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
+
+
+
+---
+
+## Título
+
+```
+
+```
 
 /* --------------------------- Funciones públicas --------------------------- */
 /**
@@ -30,3 +41,4 @@ void enviar_char(uint8_t dato);
 void enviar_str(const char* str);
 
 #endif /* UART_H_ */
+
