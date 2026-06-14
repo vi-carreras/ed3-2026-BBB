@@ -136,24 +136,26 @@ void configTIMER0(void)
  *----------------------------------------------------------------------------*/
 void configTIMER3(void)
 {
-	TIM_ResetCounter(LPC_TIM3);
-
 	TIM_TIMERCFG_T timerCfg;
 	timerCfg.prescaleOpt  = TIM_US;
 	timerCfg.prescaleValue = 1;		  // 1 µs / tick
 	TIM_InitTimer(LPC_TIM3, &timerCfg);
 
+	PINSEL_CFG_T pinCfg = {PORT_0, PIN_23, PINSEL_FUNC_11, PINSEL_PULLDOWN, DISABLE};
+	PINSEL_ConfigPin(&pinCfg);
+
+	pinCfg.pin = PIN_24;
+	PINSEL_ConfigPin(&pinCfg);
+
 	TIM_CAPTURECFG_T capCfg;
 	capCfg.channel   = TIM_CAPTURE_0; // J1 -> CAP3.0 (P0.23)
 	capCfg.risingEn  = ENABLE;
-	capCfg.fallingEn = DISABLE;
+	capCfg.fallingEn = ENABLE;
 	capCfg.intEn     = ENABLE;
 	TIM_ConfigCapture(LPC_TIM3, &capCfg);
-	TIM_PinConfig(TIM_CAP3_0_P0_23);
 
-	capCfg.channel   = TIM_CAPTURE_1; // J2 -> CAP3.1 (P0.24)
+	capCfg.channel 	= TIM_CAPTURE_1; // J2 -> CAP3.1 (P0.24)
 	TIM_ConfigCapture(LPC_TIM3, &capCfg);
-	TIM_PinConfig(TIM_CAP3_1_P0_24);
 
 	NVIC_EnableIRQ(TIMER3_IRQn);
 }
