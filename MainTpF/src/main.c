@@ -445,8 +445,8 @@ int main(void) {
     DAC_UpdateValue(0); // silencio real desde el arranque
     TIM3_Capture_Init();
 
-    LCD_Linea(0, "PASO 7: Audio");
-    LCD_Linea(1, "DAC polling");
+    LCD_Linea(0, "TP FINAL DIG 3");
+    LCD_Linea(1, "JUEGO REACCION");
     delay_ms(2000);
 
     while (1) {
