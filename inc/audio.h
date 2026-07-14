@@ -1,59 +1,45 @@
-# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
----
-
-## Título
-
-```
-
-```
 /**
  * @file        audio.h
- * @brief       Generación y reproducción de tonos por DAC + DMA.
- *             Define la frecuencia de sampleo (10 KHz) y las funciones
- *             para generar tonos, silencios y controlar la reproducción.
+ * @brief       Generación de audio por DAC en modo polling para LPC1769.
  * @version     1.0
- * @date        04. June. 2026
+ * @date        14. July. 2026
  * @author      Bombón, Burbuja y Bellota
- *
- * @par Refactor:
- * Last update: 04/06/2026, Author: David Trujillo Medina
  */
 
-#ifndef AUDIO_H
-#define AUDIO_H
+#ifndef AUDIO_H_
+#define AUDIO_H_
 
 #include <stdint.h>
 
-/* ----------------------------- Definiciones ------------------------------- */
-/** @brief  Frecuencia de sampleo del DAC (10 KHz). */
-#define SAMPLE_RATE_HZ 10000
-
-/* --------------------------- Funciones públicas --------------------------- */
-/**
- * @brief  Inicia la reproducción de un buffer de audio por DMA.
- * @param  buffer  Puntero al buffer con las muestras en formato DAC.
- * @param  size    Cantidad de muestras a reproducir.
- */
-void Audio_Play(uint32_t* buffer, uint32_t size);
+#define SAMPLE_RATE_HZ 8000
+#define AUDIO_BUF_SIZE 2400
 
 /**
- * @brief  Detiene la reproducción de audio y apaga el timer del DAC.
+ * @brief  Reproduce un tono de la frecuencia y duración indicadas.
+ * @param  frecuencia  Frecuencia en Hz.
+ * @param  dur_ms      Duración en milisegundos.
  */
-void Audio_Stop(void);
+void Audio_PlayTone(uint32_t frecuencia, uint32_t dur_ms);
 
 /**
- * @brief  Genera una onda sinusoidal en el buffer con la frecuencia indicada.
- * @param  buffer      Puntero al buffer de salida.
- * @param  samples     Cantidad de muestras a generar.
- * @param  frecuencia  Frecuencia del tono en Hz.
+ * @brief  Silencio real: DAC a 0 durante la duración indicada.
+ * @param  dur_ms  Duración en milisegundos.
  */
-void Audio_GenerateTone(uint32_t* buffer, uint32_t samples, uint32_t frecuencia);
+void Audio_PlaySilence(uint32_t dur_ms);
 
 /**
- * @brief  Llena el buffer con silencio (valor 0).
- * @param  buffer   Puntero al buffer de salida.
- * @param  samples  Cantidad de muestras a escribir con 0.
+ * @brief  Cuenta regresiva auditiva 3-2-1-GO con actualización de LCD.
  */
-void Audio_GenerateSilence(uint32_t* buffer, uint32_t samples);
+void Audio_Countdown(void);
 
-#endif /* AUDIO_H */
+/**
+ * @brief  Beep corto de "reacción registrada".
+ */
+void Audio_BeepReaccion(void);
+
+/**
+ * @brief  Melodía ascendente de victoria.
+ */
+void Audio_Victoria(void);
+
+#endif /* AUDIO_H_ */

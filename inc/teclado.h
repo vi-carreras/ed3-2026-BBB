@@ -1,42 +1,24 @@
 /**
  * @file        teclado.h
- * @brief       Teclado matricial 4x4 para ambos jugadores.
- *             Escanea las filas y columnas de los puertos P0 (J1) y
- *             P2 (J2) y retorna la tecla presionada.
+ * @brief       Identificación de tecla presionada en teclado matricial 4x4.
  * @version     1.0
- * @date        04. June. 2026
+ * @date        14. July. 2026
  * @author      Bombón, Burbuja y Bellota
- *
- * @par Refactor:
- * Last update: 04/06/2026, Author: David Trujillo Medina
  */
 
 #ifndef TECLADO_H_
 #define TECLADO_H_
 
-#include <stdint.h>
-# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
+#include "LPC17xx.h"
 
-
----
-
-## Título
-
-```
-
-```
-
-/* --------------------------- Funciones públicas --------------------------- */
-/**
- * @brief  Escanea el teclado del Jugador 1 (P0) y retorna la tecla presionada.
- * @return Código de la tecla (0-15) o 0xFF si ninguna está presionada.
- */
-uint8_t EscanearTecladoJ1(void);
+#define ROW_MASK (0x0F)
+#define COL_MASK (0xF0)
 
 /**
- * @brief  Escanea el teclado del Jugador 2 (P2) y retorna la tecla presionada.
- * @return Código de la tecla (0-15) o 0xFF si ninguna está presionada.
+ * @brief  Identifica la tecla presionada escaneando fila por fila.
+ * @param  gpio  Puerto GPIO donde está conectado el teclado (LPC_GPIO0 o LPC_GPIO2).
+ * @return Carácter de la tecla presionada o '?' si ninguna.
  */
-uint8_t EscanearTecladoJ2(void);
+char identificar_tecla(LPC_GPIO_TypeDef *gpio);
 
 #endif /* TECLADO_H_ */

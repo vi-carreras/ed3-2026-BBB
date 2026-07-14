@@ -1,44 +1,31 @@
 /**
  * @file        uart.h
- * @brief       Transmisión UART básica para el LPC1769.
- *             Provee funciones para enviar caracteres y cadenas
- *             por UART1 en modo polling.
+ * @brief       Transmisión UART2 básica para LPC1769.
  * @version     1.0
- * @date        04. June. 2026
+ * @date        14. July. 2026
  * @author      Bombón, Burbuja y Bellota
- *
- * @par Refactor:
- * Last update: 04/06/2026, Author: David Trujillo Medina
  */
 
 #ifndef UART_H_
 #define UART_H_
 
 #include <stdint.h>
-# PR: Release v1.0.1 — Migrar capture timer de TIM1 a TIM3
-
-
-
----
-
-## Título
-
-```
-
-```
-
-/* --------------------------- Funciones públicas --------------------------- */
-/**
- * @brief  Envía un carácter por UART1 (polling).
- * @param  dato  Carácter a transmitir.
- */
-void enviar_char(uint8_t dato);
 
 /**
- * @brief  Envía una cadena terminada en '\0' por UART1.
- * @param  str  Puntero a la cadena.
+ * @brief  Configura UART2 a 115200 8N1 con FIFO e IRQ de recepción.
  */
-void enviar_str(const char* str);
+void configUART2(void);
+
+/**
+ * @brief  Envía un carácter por UART2 en modo polling.
+ * @param  c  Carácter a transmitir.
+ */
+void enviar_char(uint8_t c);
+
+/**
+ * @brief  Envía una cadena terminada en '\0' por UART2.
+ * @param  s  Puntero a la cadena.
+ */
+void enviar_str(const char *s);
 
 #endif /* UART_H_ */
-
